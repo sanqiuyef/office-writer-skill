@@ -1,0 +1,11 @@
+{
+  "markdown": "## Slide 1\n**Layout:** Title Slide\n2026 年第三季度汇报\n项目办公室\n\n*Notes:* 开场说明\n\n## Slide 2\n**Layout:** Title and Content\n关键进展\n完成核心模块开发\n交付率 97%\n缺陷率降至 1.4%\n\n*Notes:* 强调交付质量\n\n## Slide 3\n**Layout:** Title Only\n指标表\n\n[Table]\n| 指标 | 目标 | 实际 |\n| --- | --- | --- |\n| 交付率 | 95% | 97% |\n| 缺陷率 | 2% | 1.4% |\n\n> slides_count: 3",
+  "result": {
+    "success": true,
+    "file_path": "../tests/fixtures/sample.pptx",
+    "content": "## Slide 1\n**Layout:** Title Slide\n2026 年第三季度汇报\n项目办公室\n\n*Notes:* 开场说明\n\n## Slide 2\n**Layout:** Title and Content\n关键进展\n完成核心模块开发\n交付率 97%\n缺陷率降至 1.4%\n\n*Notes:* 强调交付质量\n\n## Slide 3\n**Layout:** Title Only\n指标表\n\n[Table]\n| 指标 | 目标 | 实际 |\n| --- | --- | --- |\n| 交付率 | 95% | 97% |\n| 缺陷率 | 2% | 1.4% |",
+    "slides_count": 3,
+    "truncated": false,
+    "message": "成功读取演示文稿，共 3 张幻灯片"
+  }
+}

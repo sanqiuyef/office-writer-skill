@@ -1,0 +1,145 @@
+{
+  "file_path": "../tests/fixtures/sample.docx",
+  "total": 17,
+  "passed": 15,
+  "warnings": 2,
+  "errors": 0,
+  "checks": [
+    {
+      "id": "file_size",
+      "name": "文件大小检查",
+      "passed": true,
+      "severity": "info",
+      "message": "38278 字节",
+      "details": ""
+    },
+    {
+      "id": "paragraph_count",
+      "name": "段落数量",
+      "passed": true,
+      "severity": "info",
+      "message": "8 个段落",
+      "details": ""
+    },
+    {
+      "id": "blank_pages",
+      "name": "空白页检测",
+      "passed": true,
+      "severity": "info",
+      "message": "空段落: 0, 分页符: 0",
+      "details": ""
+    },
+    {
+      "id": "line_spacing",
+      "name": "行间距一致性",
+      "passed": true,
+      "severity": "info",
+      "message": "行间距: 默认",
+      "details": ""
+    },
+    {
+      "id": "table_integrity",
+      "name": "表格完整性",
+      "passed": true,
+      "severity": "info",
+      "message": "共 1 个表格",
+      "details": ""
+    },
+    {
+      "id": "heading_levels",
+      "name": "标题层级连续性",
+      "passed": true,
+      "severity": "info",
+      "message": "标题层级: H1-H2",
+      "details": ""
+    },
+    {
+      "id": "images",
+      "name": "图片嵌入检查",
+      "passed": true,
+      "severity": "info",
+      "message": "检测到 0 个图片",
+      "details": ""
+    },
+    {
+      "id": "sections",
+      "name": "分节设置",
+      "passed": true,
+      "severity": "info",
+      "message": "单节文档",
+      "details": ""
+    },
+    {
+      "id": "header_footer",
+      "name": "页眉页脚",
+      "passed": true,
+      "severity": "info",
+      "message": "已检测到页眉页脚内容",
+      "details": ""
+    },
+    {
+      "id": "placeholders",
+      "name": "遗留占位标记",
+      "passed": true,
+      "severity": "info",
+      "message": "未发现 TODO/TBD/DRAFT 或待完善标记",
+      "details": ""
+    },
+    {
+      "id": "font_installed",
+      "name": "字体安装检查",
+      "passed": true,
+      "severity": "info",
+      "message": "未显式指定字体（继承样式/主题）",
+      "details": ""
+    },
+    {
+      "id": "heading_numbering",
+      "name": "标题编号连续性",
+      "passed": true,
+      "severity": "info",
+      "message": "标题编号连续（2 个带编号标题）",
+      "details": ""
+    },
+    {
+      "id": "page_number_field",
+      "name": "页码域检查",
+      "passed": false,
+      "severity": "warn",
+      "message": "未检测到 PAGE 域（页码可能为静态文本或缺失）",
+      "details": ""
+    },
+    {
+      "id": "toc_field",
+      "name": "目录域检查",
+      "passed": false,
+      "severity": "warn",
+      "message": "未检测到目录域（TOC）",
+      "details": "文档有 3 个标题；长文档建议插入 TOC 域"
+    },
+    {
+      "id": "table_columns",
+      "name": "表格列数/合并结构",
+      "passed": true,
+      "severity": "info",
+      "message": "表格列数与合并结构一致（1 个表格）",
+      "details": ""
+    },
+    {
+      "id": "empty_paragraph_ratio",
+      "name": "空段落比例",
+      "passed": true,
+      "severity": "info",
+      "message": "空段落 0/8（0%），最长连续空段落 0",
+      "details": ""
+    },
+    {
+      "id": "mixed_fonts",
+      "name": "中英文字体混用",
+      "passed": true,
+      "severity": "info",
+      "message": "同段/同 run 未发现中英文字体混用",
+      "details": ""
+    }
+  ]
+}

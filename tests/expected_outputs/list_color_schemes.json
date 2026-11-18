@@ -1,0 +1,136 @@
+{
+  "schemes": [
+    {
+      "name": "professional-blue",
+      "display_name": "商务蓝",
+      "description": "专业商务风格，深蓝主色配合浅灰背景",
+      "preview": {
+        "title_color": "000000",
+        "body_color": "333333",
+        "accent_color": "2563EB",
+        "background_color": "F8FAFC"
+      }
+    },
+    {
+      "name": "modern-dark",
+      "display_name": "暗夜模式",
+      "description": "现代深色主题，白字深灰底，适合大屏演示",
+      "preview": {
+        "title_color": "FFFFFF",
+        "body_color": "D1D5DB",
+        "accent_color": "60A5FA",
+        "background_color": "1F2937"
+      }
+    },
+    {
+      "name": "warm-earth",
+      "display_name": "暖色大地",
+      "description": "温暖自然风格，橙色与棕色搭配",
+      "preview": {
+        "title_color": "7C2D12",
+        "body_color": "44403C",
+        "accent_color": "D97706",
+        "background_color": "FFF7ED"
+      }
+    },
+    {
+      "name": "elegant-minimal",
+      "display_name": "极简优雅",
+      "description": "黑白灰极简风格，紫色点缀，适合学术/设计",
+      "preview": {
+        "title_color": "18181B",
+        "body_color": "52525B",
+        "accent_color": "8B5CF6",
+        "background_color": "FFFFFF"
+      }
+    },
+    {
+      "name": "vibrant",
+      "display_name": "活力缤纷",
+      "description": "高对比度配色，玫红+青绿，适合创意/营销",
+      "preview": {
+        "title_color": "BE185D",
+        "body_color": "27272A",
+        "accent_color": "14B8A6",
+        "background_color": "FFF1F2"
+      }
+    },
+    {
+      "name": "corporate-green",
+      "display_name": "企业绿",
+      "description": "稳重大气，深绿主色配合浅绿背景",
+      "preview": {
+        "title_color": "064E3B",
+        "body_color": "374151",
+        "accent_color": "10B981",
+        "background_color": "ECFDF5"
+      }
+    },
+    {
+      "name": "tech-purple",
+      "display_name": "科技紫",
+      "description": "科技感紫色渐变，适合互联网/AI/创新主题",
+      "preview": {
+        "title_color": "4C1D95",
+        "body_color": "374151",
+        "accent_color": "7C3AED",
+        "background_color": "F5F3FF"
+      }
+    },
+    {
+      "name": "classic-red",
+      "display_name": "经典中国红",
+      "description": "庄重典雅的中国红，适合党政/党建/传统节日主题",
+      "preview": {
+        "title_color": "991B1B",
+        "body_color": "44403C",
+        "accent_color": "DC2626",
+        "background_color": "FEF2F2"
+      }
+    },
+    {
+      "name": "fresh-nature",
+      "display_name": "清新自然",
+      "description": "清爽绿色系，适合环保/健康/农业/教育主题",
+      "preview": {
+        "title_color": "166534",
+        "body_color": "374151",
+        "accent_color": "22C55E",
+        "background_color": "F0FDF4"
+      }
+    },
+    {
+      "name": "ocean-blue",
+      "display_name": "海洋蓝",
+      "description": "清爽海洋蓝，适合医疗/教育/水利/科技主题",
+      "preview": {
+        "title_color": "000000",
+        "body_color": "334155",
+        "accent_color": "0EA5E9",
+        "background_color": "F0F9FF"
+      }
+    },
+    {
+      "name": "sunset-orange",
+      "display_name": "日落暖橙",
+      "description": "温暖活力的橙色系，适合餐饮/旅游/创意/生活主题",
+      "preview": {
+        "title_color": "9A3412",
+        "body_color": "44403C",
+        "accent_color": "F97316",
+        "background_color": "FFF7ED"
+      }
+    },
+    {
+      "name": "monochrome-gray",
+      "display_name": "高级灰",
+      "description": "克制高级灰，适合设计/建筑/金融/高端品牌主题",
+      "preview": {
+        "title_color": "1E293B",
+        "body_color": "475569",
+        "accent_color": "64748B",
+        "background_color": "F8FAFC"
+      }
+    }
+  ]
+}

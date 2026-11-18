@@ -1,0 +1,53 @@
+{
+  "output_path": "framework.pptx",
+  "diagram": {
+    "title": "系统架构",
+    "stages": [
+      {
+        "label": "输入",
+        "nodes": [
+          {
+            "id": "a",
+            "text": "原始数据"
+          }
+        ]
+      },
+      {
+        "label": "处理",
+        "nodes": [
+          {
+            "id": "b",
+            "text": "特征提取"
+          },
+          {
+            "id": "c",
+            "text": "模型推理"
+          }
+        ]
+      },
+      {
+        "label": "输出",
+        "nodes": [
+          {
+            "id": "d",
+            "text": "结果"
+          }
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from_id": "a",
+        "to_id": "b"
+      },
+      {
+        "from_id": "b",
+        "to_id": "c"
+      },
+      {
+        "from_id": "c",
+        "to_id": "d"
+      }
+    ]
+  }
+}

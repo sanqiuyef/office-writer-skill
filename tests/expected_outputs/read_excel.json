@@ -1,0 +1,12 @@
+{
+  "markdown": "## Sheet: 销售数据\n| 区域 | 一季度 | 二季度 | 合计 |\n| 华北 | 120 | 135 | 255 |\n| 华东 | 180 | 210 | 390 |\n| 华南 | 150 | 165 | 315 |\n## Sheet: 汇总\n| 说明 | 值 |\n| 数据周期 | 2026 Q1-Q2 |\n| 数据来源 | 销售系统导出 |\n\n> sheets_count: 2；total_rows: 7",
+  "result": {
+    "success": true,
+    "file_path": "../tests/fixtures/sample.xlsx",
+    "content": "## Sheet: 销售数据\n| 区域 | 一季度 | 二季度 | 合计 |\n| 华北 | 120 | 135 | 255 |\n| 华东 | 180 | 210 | 390 |\n| 华南 | 150 | 165 | 315 |\n## Sheet: 汇总\n| 说明 | 值 |\n| 数据周期 | 2026 Q1-Q2 |\n| 数据来源 | 销售系统导出 |",
+    "sheets_count": 2,
+    "total_rows": 7,
+    "truncated": false,
+    "message": "成功读取工作簿，共 2 个工作表、7 行数据"
+  }
+}

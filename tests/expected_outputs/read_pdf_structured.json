@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "file_path": "../tests/fixtures/sample.pdf",
+  "pages_count": 1,
+  "message": "成功读取 PDF，共 1 页",
+  "metadata": {
+    "creationDate": "D:20261115032052Z"
+  },
+  "bookmarks": [],
+  "links": [],
+  "pages": [
+    {
+      "page": 1,
+      "width": 595.28,
+      "height": 841.89,
+      "text": "季度报告\n本报告汇总 2026 年第三季度的项目进展与下一步计划。\n关键指标\n指标\n目标\n实际\n交付率\n95%\n97%\n缺陷率\n2%\n1.4%\n- 完成集成测试\n- 补充用户文档\n- 启动验收评审"
+    }
+  ],
+  "truncated": false
+}

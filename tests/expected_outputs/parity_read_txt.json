@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "file_path": "tests/fixtures/sample.txt",
+  "content": "Office Writer 示例文本\n第二行：Word、Excel、PPT、PDF。\n第三行：用于 read_txt_document 契约测试。\n",
+  "encoding": "utf-8-sig",
+  "file_size": 123,
+  "truncated": false,
+  "message": "成功读取文本文件（编码: utf-8-sig，123 字节）"
+}

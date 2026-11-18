@@ -1,0 +1,36 @@
+{
+  "output_path": "report.docx",
+  "scene": "report",
+  "content": {
+    "sections": [
+      {
+        "type": "heading",
+        "text": "项目总结",
+        "level": 1
+      },
+      {
+        "type": "paragraph",
+        "text": "本季度完成核心模块开发与集成测试。"
+      },
+      {
+        "type": "table",
+        "table": {
+          "headers": [
+            "指标",
+            "数值"
+          ],
+          "rows": [
+            [
+              "交付率",
+              "97%"
+            ],
+            [
+              "缺陷率",
+              "1.4%"
+            ]
+          ]
+        }
+      }
+    ]
+  }
+}

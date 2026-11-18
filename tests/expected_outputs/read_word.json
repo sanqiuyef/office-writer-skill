@@ -1,0 +1,12 @@
+{
+  "markdown": "# 季度报告\n\n本报告汇总 2026 年第三季度的项目进展与下一步计划。\n\n## 一、项目进展\n\n完成需求评审、原型设计与核心模块开发，关键指标如下。\n\n## 二、下一步\n\n- 完成集成测试\n\n- 补充用户文档\n\n- 启动验收评审\n\n\n[Table 1]\n\n| 指标 | 目标 | 实际 |\n\n| --- | --- | --- |\n\n| 交付率 | 95% | 97% |\n\n| 缺陷率 | 2% | 1.4% |\n\n> paragraphs_count: 8；tables_count: 1",
+  "result": {
+    "success": true,
+    "file_path": "../tests/fixtures/sample.docx",
+    "content": "# 季度报告\n\n本报告汇总 2026 年第三季度的项目进展与下一步计划。\n\n## 一、项目进展\n\n完成需求评审、原型设计与核心模块开发，关键指标如下。\n\n## 二、下一步\n\n- 完成集成测试\n\n- 补充用户文档\n\n- 启动验收评审\n\n\n[Table 1]\n\n| 指标 | 目标 | 实际 |\n\n| --- | --- | --- |\n\n| 交付率 | 95% | 97% |\n\n| 缺陷率 | 2% | 1.4% |",
+    "paragraphs_count": 8,
+    "tables_count": 1,
+    "truncated": false,
+    "message": "成功读取文档，共 8 段落、1 个表格"
+  }
+}

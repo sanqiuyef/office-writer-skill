@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.DS_Store
+Thumbs.db
+
+# Runtime cache and local test artifacts
+assets/image_cache/
+tests/_work/
+tests/__pycache__/
+.pytest_cache/
+*.bak
+*.bak-*
+
+# Generated outputs from local validation (kept out of the distributable skill)
+*.tmp.docx
+*.tmp.xlsx
+*.tmp.pptx
+*.tmp.pdf

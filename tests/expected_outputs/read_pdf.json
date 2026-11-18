@@ -1,0 +1,11 @@
+{
+  "markdown": "## Page 1\n\n季度报告\n本报告汇总 2026 年第三季度的项目进展与下一步计划。\n关键指标\n指标\n目标\n实际\n交付率\n95%\n97%\n缺陷率\n2%\n1.4%\n- 完成集成测试\n- 补充用户文档\n- 启动验收评审\n\n> pages_count: 1",
+  "result": {
+    "success": true,
+    "file_path": "../tests/fixtures/sample.pdf",
+    "content": "## Page 1\n\n季度报告\n本报告汇总 2026 年第三季度的项目进展与下一步计划。\n关键指标\n指标\n目标\n实际\n交付率\n95%\n97%\n缺陷率\n2%\n1.4%\n- 完成集成测试\n- 补充用户文档\n- 启动验收评审",
+    "pages_count": 1,
+    "truncated": false,
+    "message": "成功读取 PDF，共 1 页"
+  }
+}

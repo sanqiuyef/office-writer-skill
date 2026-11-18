@@ -1,0 +1,17 @@
+{
+  "file_path": "../tests/fixtures/missing.docx",
+  "total": 1,
+  "passed": 0,
+  "warnings": 0,
+  "errors": 1,
+  "checks": [
+    {
+      "id": "file_exists",
+      "name": "文件存在",
+      "passed": false,
+      "severity": "error",
+      "message": "文件不存在",
+      "details": ""
+    }
+  ]
+}

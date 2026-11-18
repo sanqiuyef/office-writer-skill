@@ -1,0 +1,23 @@
+{
+  "output_path": "deck.pptx",
+  "slides": [
+    {
+      "layout": "title",
+      "title": "项目汇报",
+      "subtitle": "2026 年第三季度"
+    },
+    {
+      "layout": "content",
+      "title": "关键进展",
+      "body": [
+        {
+          "type": "bullet_list",
+          "items": [
+            "完成核心模块",
+            "交付率 97%"
+          ]
+        }
+      ]
+    }
+  ]
+}

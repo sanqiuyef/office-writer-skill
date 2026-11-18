@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "file_path": "../tests/fixtures/sample.pptx",
+  "slide_count": 3,
+  "slide_width": 10.0,
+  "slide_height": 7.5,
+  "layout_names": [
+    "Title Slide",
+    "Title and Content",
+    "Section Header",
+    "Two Content",
+    "Comparison",
+    "Title Only",
+    "Blank",
+    "Content with Caption",
+    "Picture with Caption",
+    "Title and Vertical Text",
+    "Vertical Title and Text"
+  ],
+  "fonts_used": [],
+  "color_hexes_found": [],
+  "message": "模板分析完成: 11 种布局, 0 种字体, 0 种颜色"
+}

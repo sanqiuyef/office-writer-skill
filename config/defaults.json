@@ -1,0 +1,28 @@
+{
+  "version": "1.0.0",
+  "python": ">=3.10",
+  "timeouts": {
+    "com_operation_seconds": 60,
+    "markdown_convert_seconds": 120,
+    "dsoffice_operation_seconds": 300
+  },
+  "render": {
+    "default_dpi": 144
+  },
+  "dsoffice": {
+    "env_var": "MCP_OFFICE_DSOFFICE",
+    "install": "npm i -g dsoffice",
+    "requires": "Node.js >= 22.19; Windows x64 needs the MSVC v14 runtime"
+  },
+  "ocr": {
+    "enabled_env": "MCP_OFFICE_OCR",
+    "tesseract_cmd_env": "OFFICE_TESSERACT_CMD",
+    "legacy_tesseract_cmd_env": "TESSERACT_CMD"
+  },
+  "exit_codes": {
+    "0": "成功",
+    "1": "门控不通过（validate_word_document 报告有 errors）",
+    "2": "参数或输入错误",
+    "3": "运行时/资产/外部调用错误"
+  }
+}

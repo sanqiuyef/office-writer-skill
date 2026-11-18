@@ -1,0 +1,182 @@
+{
+  "success": true,
+  "file_path": "../tests/fixtures/sample.docx",
+  "format": "docx",
+  "node_count": 23,
+  "truncated": false,
+  "root": {
+    "path": "/",
+    "type": "document",
+    "children": [
+      {
+        "path": "/body",
+        "type": "body",
+        "children": [
+          {
+            "path": "/body/p[1]",
+            "type": "paragraph",
+            "children": [],
+            "text": "季度报告",
+            "style": "Heading 1",
+            "format": {
+              "alignment": "CENTER (1)"
+            }
+          },
+          {
+            "path": "/body/p[2]",
+            "type": "paragraph",
+            "children": [],
+            "text": "本报告汇总 2026 年第三季度的项目进展与下一步计划。",
+            "style": "Normal",
+            "format": {
+              "alignment": null
+            }
+          },
+          {
+            "path": "/body/p[3]",
+            "type": "paragraph",
+            "children": [],
+            "text": "一、项目进展",
+            "style": "Heading 2",
+            "format": {
+              "alignment": null
+            }
+          },
+          {
+            "path": "/body/p[4]",
+            "type": "paragraph",
+            "children": [],
+            "text": "完成需求评审、原型设计与核心模块开发，关键指标如下。",
+            "style": "Normal",
+            "format": {
+              "alignment": null
+            }
+          },
+          {
+            "path": "/body/p[5]",
+            "type": "paragraph",
+            "children": [],
+            "text": "二、下一步",
+            "style": "Heading 2",
+            "format": {
+              "alignment": null
+            }
+          },
+          {
+            "path": "/body/p[6]",
+            "type": "paragraph",
+            "children": [],
+            "text": "完成集成测试",
+            "style": "List Bullet",
+            "format": {
+              "alignment": null
+            }
+          },
+          {
+            "path": "/body/p[7]",
+            "type": "paragraph",
+            "children": [],
+            "text": "补充用户文档",
+            "style": "List Bullet",
+            "format": {
+              "alignment": null
+            }
+          },
+          {
+            "path": "/body/p[8]",
+            "type": "paragraph",
+            "children": [],
+            "text": "启动验收评审",
+            "style": "List Bullet",
+            "format": {
+              "alignment": null
+            }
+          },
+          {
+            "path": "/body/tbl[1]",
+            "type": "table",
+            "children": [
+              {
+                "path": "/body/tbl[1]/row[1]",
+                "type": "row",
+                "children": [
+                  {
+                    "path": "/body/tbl[1]/row[1]/cell[1]",
+                    "type": "cell",
+                    "children": [],
+                    "text": "指标"
+                  },
+                  {
+                    "path": "/body/tbl[1]/row[1]/cell[2]",
+                    "type": "cell",
+                    "children": [],
+                    "text": "目标"
+                  },
+                  {
+                    "path": "/body/tbl[1]/row[1]/cell[3]",
+                    "type": "cell",
+                    "children": [],
+                    "text": "实际"
+                  }
+                ]
+              },
+              {
+                "path": "/body/tbl[1]/row[2]",
+                "type": "row",
+                "children": [
+                  {
+                    "path": "/body/tbl[1]/row[2]/cell[1]",
+                    "type": "cell",
+                    "children": [],
+                    "text": "交付率"
+                  },
+                  {
+                    "path": "/body/tbl[1]/row[2]/cell[2]",
+                    "type": "cell",
+                    "children": [],
+                    "text": "95%"
+                  },
+                  {
+                    "path": "/body/tbl[1]/row[2]/cell[3]",
+                    "type": "cell",
+                    "children": [],
+                    "text": "97%"
+                  }
+                ]
+              },
+              {
+                "path": "/body/tbl[1]/row[3]",
+                "type": "row",
+                "children": [
+                  {
+                    "path": "/body/tbl[1]/row[3]/cell[1]",
+                    "type": "cell",
+                    "children": [],
+                    "text": "缺陷率"
+                  },
+                  {
+                    "path": "/body/tbl[1]/row[3]/cell[2]",
+                    "type": "cell",
+                    "children": [],
+                    "text": "2%"
+                  },
+                  {
+                    "path": "/body/tbl[1]/row[3]/cell[3]",
+                    "type": "cell",
+                    "children": [],
+                    "text": "1.4%"
+                  }
+                ]
+              }
+            ],
+            "format": {
+              "rows": 3,
+              "columns": 3
+            }
+          }
+        ]
+      }
+    ],
+    "format": "docx"
+  }
+}

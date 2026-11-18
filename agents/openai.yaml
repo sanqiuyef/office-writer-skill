@@ -1,0 +1,7 @@
+# Optional Codex/OpenAI UI metadata. ZCode ignores this file; keep it in sync
+# with SKILL.md when publishing to a platform that consumes agents/openai.yaml.
+name: office-writer
+display_name: Office Writer
+version: 1.0.0
+description: 用 32 个独立 CLI 入口创建、编辑、读取、转换和验收 Word/Excel/PPT/PDF
+entrypoint: SKILL.md
