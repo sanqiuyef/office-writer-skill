@@ -19,39 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-================================================================================
-Third-party notices
-
-1. Vendored engine
-   scripts/office_engine/*.py are vendored from mcp-office-writer 0.6.0
-   (2026-11), Copyright (c) 2026 sanqiuyef, under the MIT License above.
-   Upstream repository: mcp-office-writer (mcp_office_writer package).
-   Local modifications are listed in the first three lines of each file.
-   The upstream MCP server entry points (__init__.py, __main__.py) are not
-   vendored; this skill has no MCP runtime dependency.
-
-2. Runtime dependencies (installed separately, not vendored)
-   - python-docx: MIT
-   - openpyxl: MIT
-   - python-pptx: MIT
-   - pydantic: MIT
-   - PyMuPDF (fitz): AGPL-3.0 or commercial license, dual-licensed by Artifex.
-     Review the AGPL obligations (including network-use and source-offer terms)
-     before redistributing a product that bundles PyMuPDF.
-   - fpdf2: LGPL-3.0.
-   - pywin32: PSF License.
-   - pytesseract: Apache-2.0.
-   - Pillow: HPND.
-   - pypdf: BSD-3-Clause.
-   - xlsxwriter: BSD-2-Clause.
-   - dsoffice / @deepseek-ai/libreoffice-kit: optional external CLI used by
-     convert_to_pdf, render_document_pages, and recalculate_excel_formulas;
-     installed separately under its own license.
-   - Tesseract OCR: optional external executable; installed separately under
-     its own license.
-
-3. Templates and examples
-   templates/*.docx, templates/*.xlsx, and templates/*.pptx are generated
-   starter files created for this skill; they contain no third-party text.
-   assets/examples/*.json are synthetic examples written for this skill.

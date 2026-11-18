@@ -80,4 +80,4 @@ python -X utf8 tests/update_expected.py
 
 ## 许可
 
-MIT，Copyright (c) 2026 sanqiuyef。`scripts/office_engine/` 来自 mcp-office-writer 0.6.0（MIT）。运行时依赖的许可提示见 `LICENSE`，其中 PyMuPDF 为 AGPL-3.0/商业双许可，fpdf2 为 LGPL-3.0。
+MIT，Copyright (c) 2026 sanqiuyef。`scripts/office_engine/` 来自 mcp-office-writer 0.6.0（MIT）。第三方许可与运行时依赖提示（PyMuPDF 为 AGPL-3.0/商业双许可，fpdf2 为 LGPL-3.0）见 `THIRD_PARTY_NOTICES.md`。
