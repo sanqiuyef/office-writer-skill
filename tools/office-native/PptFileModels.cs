@@ -486,6 +486,16 @@ internal static class PptModels
             throw new NativeUsageException(
                 $"未知 shape_type: {shapeType}（支持 rect/rounded_rect/oval/arrow/"
                 + "cylinder/diamond）");
+        var width = Dbl(element.Value, "width")!.Value;
+        var height = Dbl(element.Value, "height")!.Value;
+        if (width <= 0 || height <= 0)
+            throw new NativeUsageException("SlideShapeDef 的 width/height 必须大于 0（英寸）");
+        var fontSize = Int(element.Value, "font_size");
+        if (fontSize is <= 0)
+            throw new NativeUsageException("font_size 必须大于 0");
+        var lineWidth = Dbl(element.Value, "line_width");
+        if (lineWidth is <= 0)
+            throw new NativeUsageException("line_width 必须大于 0");
         return new PptSlideShape
         {
             ShapeType = shapeType,
@@ -493,18 +503,42 @@ internal static class PptModels
             HyperlinkUrl = Str(element.Value, "hyperlink_url"),
             X = Dbl(element.Value, "x"),
             Y = Dbl(element.Value, "y"),
-            Width = Dbl(element.Value, "width")!.Value,
-            Height = Dbl(element.Value, "height")!.Value,
-            BgColor = ColorStr(element.Value, "bg_color"),
-            FontColor = ColorStr(element.Value, "font_color"),
-            FontSize = Int(element.Value, "font_size"),
+            Width = width,
+            Height = height,
+            BgColor = HexColor(element.Value, "bg_color"),
+            FontColor = HexColor(element.Value, "font_color"),
+            FontSize = fontSize,
             Bold = Bool(element.Value, "bold"),
             NoFill = Bool(element.Value, "no_fill") ?? false,
-            LineColor = ColorStr(element.Value, "line_color"),
-            LineWidth = Dbl(element.Value, "line_width"),
+            LineColor = HexColor(element.Value, "line_color"),
+            LineWidth = lineWidth,
             LineDash = Bool(element.Value, "line_dash") ?? false,
             VerticalText = Bool(element.Value, "vertical_text") ?? false,
         };
+    }
+
+    private static string? HexColor(JsonElement element, string name)
+    {
+        var value = ColorStr(element, name);
+        if (value is null)
+            return null;
+        var hex = value.TrimStart('#');
+        if (hex.Length != 6 || hex.Any(ch => !Uri.IsHexDigit(ch)))
+            throw new NativeUsageException($"{name} 必须是 6 位 HEX 颜色（如 2563EB）");
+        return hex;
+    }
+
+    /// <summary>解析 ppt_manage_shapes 的顶层 shape 参数（必填对象）。</summary>
+    public static PptSlideShape ParseShapeArgument(JsonElement p)
+    {
+        if (!p.TryGetProperty("shape", out var element)
+            || element.ValueKind != JsonValueKind.Object)
+        {
+            throw new NativeUsageException(
+                "shape 必须是 JSON 对象，至少包含 width 与 height（英寸）");
+        }
+        return ParseShape(element)
+               ?? throw new NativeUsageException("shape 参数为空");
     }
 
     private static PptSlideConnector? ParseConnector(JsonElement? element)

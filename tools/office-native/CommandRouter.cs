@@ -21,6 +21,8 @@ internal static class CommandRouter
                 => ("ppt_manage_effects", PptCommands.RunEffects(p)),
             "ppt-smartart" or "ppt-manage-smartart"
                 => ("ppt_manage_smartart", PptCommands.RunSmartArt(p)),
+            "ppt-shapes" or "ppt-manage-shapes"
+                => ("ppt_manage_shapes", PptShapeCommands.RunShapes(p)),
             "excel-pivots" or "excel-manage-pivots"
                 => ("excel_manage_pivots", ExcelCommands.RunPivots(p)),
             "excel-print" => ("excel_print", ExcelCommands.RunPrint(p)),

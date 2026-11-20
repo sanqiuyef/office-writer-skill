@@ -527,15 +527,19 @@ class SlideShapeDef(BaseModel):
     hyperlink_url: str | None = Field(None, description="点击形状打开的链接")
     x: float | None = Field(None, description="左侧位置 (英寸)")
     y: float | None = Field(None, description="顶部位置 (英寸)")
-    width: float = Field(..., description="宽度 (英寸)")
-    height: float = Field(..., description="高度 (英寸)")
-    bg_color: str | None = Field(None, description="填充颜色 HEX，None 且 no_fill=False 时保持默认")
-    font_color: str | None = Field(None, description="文字颜色 HEX")
-    font_size: int | None = Field(None, description="字号 (pt)，默认 12")
+    width: float = Field(..., gt=0, description="宽度 (英寸)")
+    height: float = Field(..., gt=0, description="高度 (英寸)")
+    bg_color: str | None = Field(
+        None, pattern=r"^#?[0-9A-Fa-f]{6}$",
+        description="填充颜色 HEX（6 位），None 且 no_fill=False 时保持默认")
+    font_color: str | None = Field(
+        None, pattern=r"^#?[0-9A-Fa-f]{6}$", description="文字颜色 HEX（6 位）")
+    font_size: int | None = Field(None, gt=0, description="字号 (pt)，默认 12")
     bold: bool | None = False
     no_fill: bool = Field(False, description="无填充（透明），用于虚线分组框等")
-    line_color: str | None = Field(None, description="边框颜色 HEX，None 不设置边框")
-    line_width: float | None = Field(None, description="边框宽度 (pt)")
+    line_color: str | None = Field(
+        None, pattern=r"^#?[0-9A-Fa-f]{6}$", description="边框颜色 HEX（6 位）")
+    line_width: float | None = Field(None, gt=0, description="边框宽度 (pt)")
     line_dash: bool = Field(False, description="边框是否虚线")
     vertical_text: bool = Field(False, description="文字竖排（圆柱体阶段标记用）")
 

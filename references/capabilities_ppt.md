@@ -16,7 +16,7 @@
 | 图表 | column/bar/line/pie/doughnut/area/radar，标题、图例、位置尺寸；内嵌可编辑数据工作簿（`c:externalData` + embedded xlsx） | 已覆盖 | `SlideItem.type=chart` + `ChartDef`；无 trendline/error bar/组合图 |
 | 批量编辑 | 按 stable path 设置/增删/移动/替换；跨 slide 移动图片/图表/超链接会迁移关系 | 已覆盖 | `batch_edit_office_document`；音视频等媒体关系跨 slide 明确不支持 |
 | 图片 | 本地/URL、位置尺寸、四边裁剪、点击超链接 | 已覆盖 | `SlideImageDef`：`crop_left/right/top/bottom`、`hyperlink_url`；SVG 不支持 |
-| 形状 | rect/rounded_rect/oval/arrow/cylinder/diamond、填充/边框/虚线/竖排文字/阴影、点击超链接 | 已覆盖 | `SlideShapeDef`；无组合形状/自由曲线/3D/艺术字 |
+| 形状 | rect/rounded_rect/oval/arrow/cylinder/diamond、填充/边框/虚线/竖排文字/阴影、点击超链接；可向已打开或未打开的指定幻灯片追加单个形状 | 已覆盖 | 创建/追加幻灯片用 `SlideShapeDef`；单形状绘制用 `ppt_manage_shapes`（`action=add`，`slide` + `shape`）；无组合形状/自由曲线/3D/艺术字 |
 | 连接线 | 直线连接线、起止箭头、箭头样式、虚线 | 已覆盖 | `SlideConnectorDef` |
 | 框架图/流程图 | 阶段 + 节点 + 箭头，17 种节点形状，straight/elbow/curve | 已覆盖 | `ppt_create_framework_diagram`（文件级）、`ppt_add_flowchart_slide`（活动文档） |
 | 超链接 | 形状/图片点击链接、指定文字 run 链接 | 已覆盖 | 创建时用 `hyperlink_url`；已有文件用 `ppt_set_hyperlinks`（`shape_index` 或 `shape_text` + `text_match`） |
@@ -39,10 +39,13 @@
 
 `edit_open_powerpoint` 只支持基础 paragraph/table/image/shape/connector。本文件新增的表格/图表几何、图片裁剪、形状超链接等字段会**明确报错**（退出码 3），不会静默丢弃；请关闭文件后改用文件级 `edit_powerpoint`。
 
+`ppt_manage_shapes` 是活动文档单形状绘制入口：文件已在 PowerPoint/WPS 打开时直接向指定幻灯片追加形状并保存（返回 `mode=open_document`），不需要关闭文件；文件未打开时自动走文件级写入并生成 `.bak-*`（返回 `mode=file`）。`action=list` 返回索引、名称、位置、尺寸与文本；`type` 在文件级为 XML 元素名、在活动文档为 Mso 类型码，`preset` 仅文件级输出。
+
 ## 使用建议
 
-标注 office-native 的能力默认走 C#（Windows + PowerPoint）；未构建时入口返回退出码 3 并给出构建命令，或设 `OFFICE_NATIVE_ENGINE=python` 回退旧引擎。
+默认执行策略是 Python 优先：表格中标注 C# 的能力（动画/切换/批注/SmartArt）自动走 C#；其余能力默认由 Python 引擎执行，`OFFICE_NATIVE_ENGINE=csharp` 可强制全量 C#。C# 专属入口未构建时返回退出码 3 并给出构建命令。
 
 - 做演示文稿：`create_powerpoint`（版式 + 文本 + 表格/图表/图片/形状/连接线）→ `ppt_apply_color_scheme` → `ppt_optimize_slide_layout` → 渲染验收。
 - 改已有 PPT：`read_powerpoint` / `inspect_office_document` 看结构 → `batch_edit_office_document` 按形状路径改；链接用 `ppt_set_hyperlinks`。
+- 在已打开 PPT 的指定页加形状：`ppt_manage_shapes`（`action=add`，`slide` + `shape`）；不需要关闭 PowerPoint，形状立即出现在当前窗口；未打开时同一入口自动文件级写入。
 - 动画、切换、批注、SmartArt：用 `ppt_manage_effects` / `ppt_manage_smartart`（默认 C# COM）；不要用 python-pptx 伪造。

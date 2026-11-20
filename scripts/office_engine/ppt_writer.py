@@ -8,12 +8,19 @@ mcp-office-writer - PowerPoint (.pptx) 写入/编辑逻辑
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
+from pptx.enum.dml import MSO_LINE_DASH_STYLE
+from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import PP_ALIGN, MSO_AUTO_SIZE
+from pptx.oxml.ns import qn
+
+from . import office_com
+from .utils import atomic_save
 
 if TYPE_CHECKING:
     from .models import SlideDef, SlideItem, SlideTableDef, SlideImageDef
@@ -1801,3 +1808,145 @@ def _add_shape_shadow(shape, blur_pt: float = 8.0, dist_pt: float = 3.0,
     srgb.set("val", "000000")
     alpha = etree.SubElement(srgb, qn("a:alpha"))
     alpha.set("val", str(int(opacity_pct * 1000)))
+
+
+# ── 单形状绘制（ppt_manage_shapes）──────────────────────────────
+
+_PPT_SHAPE_PRESET_MAP = {
+    "rect": MSO_SHAPE.RECTANGLE,
+    "rounded_rect": MSO_SHAPE.ROUNDED_RECTANGLE,
+    "oval": MSO_SHAPE.OVAL,
+    "arrow": MSO_SHAPE.RIGHT_ARROW,
+    "cylinder": MSO_SHAPE.CAN,
+    "diamond": MSO_SHAPE.DIAMOND,
+}
+
+
+def add_shape_to_presentation(file_path: str, slide_number: int, shape_def) -> dict[str, object]:
+    """向指定幻灯片添加一个形状；文件已打开时优先走活动文档 COM。"""
+    com_result = office_com.try_add_open_powerpoint_shape(
+        file_path, slide_number, shape_def)
+    if com_result is not None:
+        return com_result
+    return _add_shape_file(file_path, slide_number, shape_def)
+
+
+def list_slide_shapes(file_path: str, slide_number: int) -> dict[str, object]:
+    """列出指定幻灯片的形状；文件已打开时优先走活动文档 COM。"""
+    com_result = office_com.try_list_open_powerpoint_shapes(file_path, slide_number)
+    if com_result is not None:
+        return com_result
+    return _list_shapes_file(file_path, slide_number)
+
+
+def _add_shape_file(file_path: str, slide_number: int, shape_def) -> dict[str, object]:
+    path = Path(file_path)
+    presentation = _load_presentation(str(path))
+    slide = _slide_at(presentation, slide_number)
+    shape_type = _PPT_SHAPE_PRESET_MAP.get(shape_def.shape_type, MSO_SHAPE.RECTANGLE)
+    left = Inches(shape_def.x if shape_def.x is not None else 0.5)
+    top = Inches(shape_def.y if shape_def.y is not None else 1.5)
+    width = Inches(shape_def.width)
+    height = Inches(shape_def.height)
+    shape = slide.shapes.add_shape(shape_type, left, top, width, height)
+    _apply_shape_style(shape, shape_def)
+    backup_path = atomic_save(lambda tmp: presentation.save(tmp), str(path))
+    return {
+        "success": True,
+        "action": "add",
+        "mode": "file",
+        "file_path": str(path.resolve()),
+        "slide": slide_number,
+        "shape_index": len(slide.shapes),
+        "shape_name": shape.name,
+        "backup_path": backup_path,
+        "message": f"已向第 {slide_number} 张幻灯片添加形状（文件级写入）",
+    }
+
+
+def _list_shapes_file(file_path: str, slide_number: int) -> dict[str, object]:
+    path = Path(file_path)
+    presentation = _load_presentation(str(path))
+    slide = _slide_at(presentation, slide_number)
+    items = []
+    for index, shape in enumerate(slide.shapes, start=1):
+        box = _shape_box(shape)
+        preset = None
+        try:
+            sp_pr = shape._element.find(qn("p:spPr"))
+            if sp_pr is not None:
+                geom = sp_pr.find(qn("a:prstGeom"))
+                if geom is not None:
+                    preset = geom.get("prst")
+        except Exception:
+            pass
+        text = ""
+        try:
+            if shape.has_text_frame:
+                text = shape.text_frame.text
+        except Exception:
+            pass
+        items.append({
+            "index": index,
+            "shape_id": shape.shape_id,
+            "name": shape.name,
+            "type": shape._element.tag.split("}")[-1],
+            "preset": preset,
+            "x": round(box[0] / 914400, 4) if box else None,
+            "y": round(box[1] / 914400, 4) if box else None,
+            "width": round(box[2] / 914400, 4) if box else None,
+            "height": round(box[3] / 914400, 4) if box else None,
+            "text": text,
+        })
+    return {
+        "success": True,
+        "action": "list",
+        "mode": "file",
+        "file_path": str(path.resolve()),
+        "slide": slide_number,
+        "count": len(items),
+        "shapes": items,
+    }
+
+
+def _slide_at(presentation, slide_number: int):
+    count = len(presentation.slides)
+    if slide_number < 1 or slide_number > count:
+        raise ValueError(f"slide={slide_number} 超出范围（共 {count} 张）")
+    return presentation.slides[slide_number - 1]
+
+
+def _apply_shape_style(shape, shape_def) -> None:
+    if shape_def.no_fill:
+        shape.fill.background()
+    elif shape_def.bg_color:
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = RGBColor.from_string(shape_def.bg_color.upper())
+    if shape_def.line_color:
+        shape.line.color.rgb = RGBColor.from_string(shape_def.line_color.upper())
+    if shape_def.line_width is not None:
+        shape.line.width = Pt(shape_def.line_width)
+    if shape_def.line_dash:
+        shape.line.dash_style = MSO_LINE_DASH_STYLE.DASH
+    if shape_def.text:
+        text_frame = shape.text_frame
+        text_frame.word_wrap = not shape_def.vertical_text
+        text_frame.text = shape_def.text
+        paragraph = text_frame.paragraphs[0]
+        paragraph.alignment = PP_ALIGN.CENTER
+        if shape_def.vertical_text:
+            try:
+                text_frame._txBody.bodyPr.set("vert", "vert270")
+            except Exception:
+                pass
+        for run in paragraph.runs:
+            if shape_def.font_color:
+                run.font.color.rgb = RGBColor.from_string(shape_def.font_color.upper())
+            run.font.size = Pt(shape_def.font_size) if shape_def.font_size else Pt(12)
+            if shape_def.bold:
+                run.font.bold = True
+    if shape_def.hyperlink_url:
+        try:
+            shape.click_action.hyperlink.address = shape_def.hyperlink_url
+        except Exception:
+            pass

@@ -56,6 +56,7 @@ ENTRY_SCRIPTS = {
     "word_manage_content_controls.py",
     "ppt_manage_effects.py",
     "ppt_manage_smartart.py",
+    "ppt_manage_shapes.py",
     "excel_manage_pivots.py",
     "excel_print.py",
 }

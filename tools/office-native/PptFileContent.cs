@@ -162,15 +162,10 @@ internal sealed class PptSlideWriter
     {
         if (textBody is null)
             return;
-        var paragraphs = textBody.Elements(PptFileOoxml.A + "p").ToList();
-        if (paragraphs.Count == 1 && IsEmptyParagraph(paragraphs[0]))
-            paragraphs[0].Remove();
+        // 与 python-pptx 一致：保留占位符自带的空段落，正文从第二段开始，
+        // 避免单段正文贴顶后与固定位置的列表文本框重叠。
         textBody.Add(paragraph);
     }
-
-    private static bool IsEmptyParagraph(XElement paragraph) =>
-        !paragraph.HasElements && paragraph.Attributes().All(attribute =>
-            attribute.Name.LocalName is "lvl" or "algn" or "endParaRPr");
 
     public XElement AddTextBox(double x, double y, double width, double height,
         IEnumerable<XElement> paragraphs)
@@ -214,6 +209,17 @@ internal sealed class PptSlideWriter
             var level = numbered ? item.Level : 0;
             paragraphs.Add(PptFileContent.BuildParagraph(text, level, item.Style,
                 bullet: !numbered, numbered: numbered));
+        }
+        // 有正文占位符时按顺序追加，避免固定 y=1.8 的文本框与正文段落重叠。
+        var placeholder = FindBodyPlaceholder(1);
+        var textBody = placeholder is null
+            ? null
+            : PptFileOoxml.TextBodyOf(placeholder);
+        if (textBody is not null)
+        {
+            foreach (var paragraph in paragraphs)
+                AppendParagraph(textBody, paragraph);
+            return;
         }
         AddTextBox(defaults.Left, 1.8, defaults.Width, defaults.Height, paragraphs);
     }
@@ -262,7 +268,9 @@ internal sealed class PptSlideWriter
         var tableElement = new XElement(PptFileOoxml.A + "tbl",
             new XElement(PptFileOoxml.A + "tblPr",
                 new XAttribute("firstRow", table.Headers.Count > 0 ? "1" : "0"),
-                new XAttribute("bandRow", "1")),
+                new XAttribute("bandRow", "1"),
+                new XElement(PptFileOoxml.A + "tableStyleId",
+                    "{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}")),
             new XElement(PptFileOoxml.A + "tblGrid",
                 widths.Select(columnWidth => new XElement(PptFileOoxml.A + "gridCol",
                     new XAttribute("w", PptFileOoxml.Inches(columnWidth))))),
@@ -394,7 +402,7 @@ internal sealed class PptSlideWriter
         _tree.Add(picture);
     }
 
-    private void AddShape(PptSlideShape shape)
+    public void AddShape(PptSlideShape shape)
     {
         var preset = shape.ShapeType switch
         {
@@ -447,7 +455,8 @@ internal sealed class PptSlideWriter
         }
 
         var textBody = new XElement(PptFileOoxml.P + "txBody");
-        var bodyProperties = new XElement(PptFileOoxml.A + "bodyPr");
+        var bodyProperties = new XElement(PptFileOoxml.A + "bodyPr",
+            new XAttribute("anchor", "ctr"));
         if (shape.VerticalText)
         {
             bodyProperties.SetAttributeValue("vert", "vert270");
@@ -1033,7 +1042,8 @@ internal static class PptFileContent
                 new XElement(PptFileOoxml.C + "legendPos",
                     new XAttribute("val", "b")),
                 new XElement(PptFileOoxml.C + "overlay",
-                    new XAttribute("val", "0"))));
+                    new XAttribute("val", "0")),
+                ChartTextProperties(1200)));
         }
         chartElementRoot.Add(new XElement(PptFileOoxml.C + "plotVisOnly",
             new XAttribute("val", "1")));
@@ -1055,16 +1065,27 @@ internal static class PptFileContent
         return chartSpace;
     }
 
+    private static XElement ChartTextProperties(int size) =>
+        new(PptFileOoxml.C + "txPr",
+            new XElement(PptFileOoxml.A + "bodyPr"),
+            new XElement(PptFileOoxml.A + "lstStyle"),
+            new XElement(PptFileOoxml.A + "p",
+                new XElement(PptFileOoxml.A + "pPr",
+                    new XElement(PptFileOoxml.A + "defRPr",
+                        new XAttribute("sz", size))),
+                new XElement(PptFileOoxml.A + "endParaRPr",
+                    new XAttribute("lang", "zh-CN"))));
+
     private static XElement BuildChartTitle(string title)
     {
         var paragraph = new XElement(PptFileOoxml.A + "p",
             new XElement(PptFileOoxml.A + "pPr",
                 new XElement(PptFileOoxml.A + "defRPr",
-                    new XAttribute("sz", "1200"))));
+                    new XAttribute("sz", "1400"))));
         AppendTextContent(paragraph, title,
             new XElement(PptFileOoxml.A + "rPr",
                 new XAttribute("lang", "zh-CN"),
-                new XAttribute("sz", "1200")));
+                new XAttribute("sz", "1400")));
         return new XElement(PptFileOoxml.C + "title",
             new XElement(PptFileOoxml.C + "tx",
                 new XElement(PptFileOoxml.C + "rich",
@@ -1279,6 +1300,7 @@ internal static class PptFileContent
                 new XAttribute("val", "none")),
             new XElement(PptFileOoxml.C + "tickLblPos",
                 new XAttribute("val", "nextTo")),
+            ChartTextProperties(1200),
             new XElement(PptFileOoxml.C + "crossAx",
                 new XAttribute("val", crossAxisId)),
             new XElement(PptFileOoxml.C + "crosses",
@@ -1308,6 +1330,7 @@ internal static class PptFileContent
                 new XAttribute("val", "none")),
             new XElement(PptFileOoxml.C + "tickLblPos",
                 new XAttribute("val", "nextTo")),
+            ChartTextProperties(1200),
             new XElement(PptFileOoxml.C + "crossAx",
                 new XAttribute("val", crossAxisId)),
             new XElement(PptFileOoxml.C + "crosses",

@@ -1,6 +1,6 @@
 # CLI 参数参考
 
-来源：本 skill 的 44 个入口脚本（32 个为 mcp-office-writer 0.6.0 的 1:1 包装 + 12 个本地入口：活动文档替换、Word 批注/属性、Excel 图表、PPT 超链接，以及 7 个 office-native 包装，2026-11）。
+来源：本 skill 的 45 个入口脚本（32 个为 mcp-office-writer 0.6.0 的 1:1 包装 + 13 个本地入口：活动文档替换、Word 批注/属性、Excel 图表、PPT 超链接，以及 8 个 office-native 包装，2026-11）。
 
 适用边界：命令行调用与 `--params` JSON 的字段名；全部模型的字段类型、默认值与说明见 `references/models_word.md`、`models_excel.md`、`models_ppt.md`、`models_pdf_common.md`，模型定义源为 `scripts/office_engine/models.py`。所有入口都支持 `--params '<JSON 对象>'` 与 `--params-file <路径>`，同名显式 flag 优先；`--params-file -` 从 stdin 读取。
 
@@ -99,7 +99,7 @@
 
 ## office-native 扩展
 
-全部 44 个入口由 `tools/office-native` C# 实现（.NET 8 + Open XML SDK / Office COM），默认走 C#；`OFFICE_NATIVE_ENGINE=python` 可回退旧引擎。构建：`pwsh -File tools/office-native/build.ps1`（含 `IncludeNativeLibrariesForSelfExtract=true`，PDFium 原生库才会随单文件发布），或用 `OFFICE_NATIVE_BIN` 指向 `office-native.exe`。未构建时默认调用返回退出码 3 并提示构建命令。所有修改型命令写回前自动 `.bak-*`。
+全部 45 个入口都有 `tools/office-native` C# 实现（.NET 8 + Open XML SDK / Office COM），但默认 Python 优先：`scripts/office_engine/` 有实现的入口走 Python，只有 7 个 C# 专属入口（Word 修订/脚注/内容控件、PPT 动画切换批注/SmartArt、Excel 透视表/打印）自动走 C#。`OFFICE_NATIVE_ENGINE=csharp` 强制全量 C#，`OFFICE_NATIVE_ENGINE=python` 强制 Python（C# 专属入口仍会调用 C#）。构建：`pwsh -File tools/office-native/build.ps1`（含 `IncludeNativeLibrariesForSelfExtract=true`，PDFium 原生库才会随单文件发布），或用 `OFFICE_NATIVE_BIN` 指向 `office-native.exe`。未构建时只有 C# 专属入口返回退出码 3 并提示构建命令。所有修改型命令写回前自动 `.bak-*`。
 
 | 入口 | 关键 flag | 关键 params |
 |:---|:---|:---|
@@ -108,6 +108,7 @@
 | `word_manage_content_controls` | `--file-path` `--action` `--tag` | `action: add-text/add-date/add-dropdown/add-checkbox/list/set/remove`；`tag`、`alias`、`text`、`date`、`date_format`、`items`、`value`、`checked` |
 | `ppt_manage_effects` | `--file-path` `--action` `--slide` | `action: animations-add/list/clear、transition-set/list/clear、comments-add/list/delete`；`shape_index`、`effect`（名称或 `entry_effect` 数值）、`duration`、`advance_time`、`text`、`author` |
 | `ppt_manage_smartart` | `--file-path` `--action` `--slide` | `action: layouts/add`；`layout`、`texts`、`x/y/width/height`（英寸） |
+| `ppt_manage_shapes` | `--file-path` `--action` `--slide` | `action: add/list`；`shape`：`shape_type`（rect/rounded_rect/oval/arrow/cylinder/diamond）、`x/y/width/height`（英寸）、`text`、`bg_color`、`font_color`、`font_size`、`bold`、`no_fill`、`line_color`、`line_width`、`line_dash`、`vertical_text`、`hyperlink_url`；文件已打开走活动文档 COM，未打开走文件级并自动备份 |
 | `excel_manage_pivots` | `--file-path` `--action` `--sheet` | `action: create/list/refresh`；`source_sheet`、`source_range`、`target_sheet`、`target_cell`、`name`、`row_field`、`column_field`、`data_field`、`function` |
 | `excel_print` | `--file-path` `--action` `--sheet` `--output` | `action: pdf/print`；`output`、`printer`、`copies`、`confirm_print`（print 必填） |
 

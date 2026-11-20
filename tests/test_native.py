@@ -71,8 +71,11 @@ REQUIRES_EXCEL = unittest.skipUnless(
 )
 
 
-def run_script(script: str, args: list[str]) -> subprocess.CompletedProcess:
-    env = os.environ.copy()
+def run_script(script: str, args: list[str],
+               env: dict | None = None) -> subprocess.CompletedProcess:
+    merged = os.environ.copy()
+    if env:
+        merged.update(env)
     return subprocess.run(
         [sys.executable, "-X", "utf8", str(SCRIPTS / script), *args],
         cwd=SCRIPTS,
@@ -80,13 +83,13 @@ def run_script(script: str, args: list[str]) -> subprocess.CompletedProcess:
         text=True,
         encoding="utf-8",
         errors="backslashreplace",
-        env=env,
+        env=merged,
         check=False,
     )
 
 
-def run_ok(script: str, args: list[str]) -> dict:
-    result = run_script(script, args)
+def run_ok(script: str, args: list[str], env: dict | None = None) -> dict:
+    result = run_script(script, args, env=env)
     if result.returncode != 0:
         raise AssertionError(
             f"{script} exited {result.returncode}: {result.stdout}\n{result.stderr}"
@@ -191,6 +194,123 @@ class NativeBackendTest(unittest.TestCase):
                 }),
             ])
             self.assertEqual(added["nodes_written"], 2)
+
+    def test_ppt_manage_shapes_add_and_list(self) -> None:
+        from pptx import Presentation
+
+        with tempfile.TemporaryDirectory(prefix="office_native_shapes_") as tmp:
+            path = Path(tmp) / "deck.pptx"
+            presentation = Presentation()
+            presentation.slides.add_slide(presentation.slide_layouts[6])  # blank
+            presentation.save(path)
+
+            added = run_ok("ppt_manage_shapes.py", [
+                "--file-path", str(path), "--action", "add", "--slide", "1",
+                "--params", json_arg({"shape": {
+                    "shape_type": "rounded_rect", "x": 1.0, "y": 1.5,
+                    "width": 3.0, "height": 1.0, "bg_color": "2563EB",
+                    "text": "形状测试", "font_color": "FFFFFF",
+                    "font_size": 18, "bold": True,
+                }}),
+            ])
+            self.assertEqual(added["mode"], "file")
+            self.assertTrue(Path(added["backup_path"]).is_file())
+
+            listed = run_ok("ppt_manage_shapes.py", [
+                "--file-path", str(path), "--action", "list", "--slide", "1",
+            ])
+            self.assertEqual(listed["mode"], "file")
+            self.assertEqual(added["shape_index"], listed["count"])
+            shape = listed["shapes"][-1]
+            self.assertEqual(shape["preset"], "roundRect")
+            self.assertEqual(shape["text"], "形状测试")
+            self.assertAlmostEqual(shape["x"], 1.0, places=2)
+            self.assertAlmostEqual(shape["width"], 3.0, places=2)
+
+            bad = run_script("ppt_manage_shapes.py", [
+                "--file-path", str(path), "--action", "add", "--slide", "9",
+                "--params", json_arg({"shape": {"width": 1, "height": 1}}),
+            ])
+            self.assertEqual(bad.returncode, 2, bad.stdout)
+            for bad_shape in (
+                {"width": 0, "height": 1},
+                {"width": 1, "height": 1, "bg_color": "red"},
+                {"width": 1, "height": 1, "bg_color": "80FF0000"},
+            ):
+                invalid = run_script("ppt_manage_shapes.py", [
+                    "--file-path", str(path), "--action", "add",
+                    "--params", json_arg({"shape": bad_shape}),
+                ])
+                self.assertEqual(invalid.returncode, 2, invalid.stdout)
+
+    @REQUIRES_NATIVE
+    def test_ppt_manage_shapes_csharp_backend(self) -> None:
+        from pptx import Presentation
+
+        with tempfile.TemporaryDirectory(prefix="office_native_shapes_cs_") as tmp:
+            path = Path(tmp) / "deck.pptx"
+            presentation = Presentation()
+            presentation.slides.add_slide(presentation.slide_layouts[6])
+            presentation.save(path)
+            env = {"OFFICE_NATIVE_ENGINE": "csharp"}
+            added = run_ok("ppt_manage_shapes.py", [
+                "--file-path", str(path), "--action", "add", "--slide", "1",
+                "--params", json_arg({"shape": {
+                    "shape_type": "oval", "x": 2.0, "y": 2.0,
+                    "width": 1.2, "height": 1.2, "bg_color": "10B981",
+                }}),
+            ], env=env)
+            self.assertEqual(added["mode"], "file")
+            self.assertTrue(added["shape_name"].startswith("Shape "))
+
+            listed = run_ok("ppt_manage_shapes.py", [
+                "--file-path", str(path), "--action", "list", "--slide", "1",
+            ], env=env)
+            self.assertEqual(listed["shapes"][-1]["preset"], "ellipse")
+
+    @REQUIRES_PPT
+    def test_ppt_manage_shapes_open_document(self) -> None:
+        import pythoncom
+        import win32com.client as win32
+        from pptx import Presentation
+
+        with tempfile.TemporaryDirectory(prefix="office_native_shapes_open_") as tmp:
+            path = Path(tmp) / "deck.pptx"
+            presentation = Presentation()
+            presentation.slides.add_slide(presentation.slide_layouts[6])
+            presentation.save(path)
+
+            pythoncom.CoInitialize()
+            app = None
+            opened = None
+            try:
+                app = win32.DispatchEx("PowerPoint.Application")
+                opened = app.Presentations.Open(str(path), 0, 0, 0)
+                added = run_ok("ppt_manage_shapes.py", [
+                    "--file-path", str(path), "--action", "add", "--slide", "1",
+                    "--params", json_arg({"shape": {
+                        "shape_type": "rect", "x": 1.0, "y": 1.0,
+                        "width": 2.0, "height": 1.0, "text": "open-doc",
+                    }}),
+                ])
+                self.assertEqual(added["mode"], "open_document")
+                listed = run_ok("ppt_manage_shapes.py", [
+                    "--file-path", str(path), "--action", "list", "--slide", "1",
+                ])
+                self.assertEqual(listed["mode"], "open_document")
+                self.assertEqual(listed["shapes"][-1]["text"], "open-doc")
+            finally:
+                if opened is not None:
+                    try:
+                        opened.Close()
+                    except Exception:
+                        pass
+                if app is not None:
+                    try:
+                        app.Quit()
+                    except Exception:
+                        pass
+                pythoncom.CoUninitialize()
 
     @REQUIRES_EXCEL
     def test_excel_pivots_and_pdf(self) -> None:

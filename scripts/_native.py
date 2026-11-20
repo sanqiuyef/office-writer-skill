@@ -44,6 +44,7 @@ COMMANDS = {
     "ppt_set_hyperlinks": "ppt-set-hyperlinks",
     "ppt_manage_effects": "ppt-manage-effects",
     "ppt_manage_smartart": "ppt-manage-smartart",
+    "ppt_manage_shapes": "ppt-shapes",
     "create_pdf_document": "create-pdf-document",
     "read_pdf_document": "read-pdf-document",
     "read_pdf_structured": "read-pdf-structured",
@@ -76,15 +77,35 @@ def _candidates():
 
 IMPLEMENTED = set(COMMANDS)
 
+# Python 引擎尚未实现的入口；auto（默认）模式下这些入口自动走 C#。
+# 其余入口默认走 Python，C# 仅作为 OFFICE_NATIVE_ENGINE=csharp 的可选后端。
+CSHARP_ONLY = {
+    "word_manage_revisions",
+    "word_manage_footnotes",
+    "word_manage_content_controls",
+    "ppt_manage_effects",
+    "ppt_manage_smartart",
+    "excel_manage_pivots",
+    "excel_print",
+}
+
 
 def use_csharp(tool: str | None = None) -> bool:
-    """默认使用 C# 后端；OFFICE_NATIVE_ENGINE=python 强制回旧 Python 引擎。"""
+    """默认 Python 优先，C# 只补 Python 引擎没有实现的入口。
+
+    - 未设置：auto；`CSHARP_ONLY` 中的入口走 C#，其余走 Python。
+    - `OFFICE_NATIVE_ENGINE=python|legacy|py`：强制 Python（C# 独有入口因无 Python
+      实现仍会调用 C#，调用方会在这些入口里直接使用 run_native）。
+    - `OFFICE_NATIVE_ENGINE=csharp|native|1|true`：强制 C#。
+    """
     value = os.environ.get(ENGINE_ENV, "").strip().lower()
     if value in {"python", "legacy", "py"}:
         return False
-    if value in {"", "csharp", "native", "1", "true"}:
+    if value in {"csharp", "native", "1", "true"}:
         return tool is None or tool in IMPLEMENTED
-    return False
+    if tool is None:
+        return False
+    return tool in CSHARP_ONLY
 
 
 def run_entry(tool: str, params: dict) -> tuple[dict, int]:

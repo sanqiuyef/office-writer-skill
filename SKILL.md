@@ -1,11 +1,11 @@
 ---
 name: office-writer
-description: 用 44 个独立 CLI 入口创建、编辑、读取、转换和验收 Word/Excel/PPT/PDF：写报告/公文/论文/简历/合同、Markdown 转 Word、Word 批注/域/属性/修订/脚注/内容控件、Excel 图表/条件格式/数据验证/超级表/定义名称/透视表、PPT 超链接/几何/裁剪/动画/切换/批注/SmartArt、公式重算、PPT 配色/布局/清理/框架图、套模板填充 {{占位符}}、导出 PDF/打印、批量编辑与活动 Office 文档。转换/渲染/重算支持 dsoffice → Microsoft Office COM → WPS COM 回退。触发：写 Word、生成 docx、写报告、写公文、写论文、写简历、写合同、改稿、追加段落、写 Excel、生成表格、公式重算、写 PPT、做演示文稿、PPT 美化、PPT 配色、PPT 优化布局、清理占位符、生成框架图、写 PDF、Markdown 转 Word、套模板、填充占位符、导出 PDF、转 PDF、渲染页面、检查排版、检查字号、读取文档、批量编辑文档、活动 Office 文档。
+description: 用 45 个独立 CLI 入口创建、编辑、读取、转换和验收 Word/Excel/PPT/PDF：写报告/公文/论文/简历/合同、Markdown 转 Word、Word 批注/域/属性/修订/脚注/内容控件、Excel 图表/条件格式/数据验证/超级表/定义名称/透视表、PPT 超链接/几何/裁剪/动画/切换/批注/SmartArt/形状、公式重算、PPT 配色/布局/清理/框架图、套模板填充 {{占位符}}、导出 PDF/打印、批量编辑与活动 Office 文档。转换/渲染/重算支持 dsoffice/Office/WPS COM 回退。触发：写 Word、生成 docx、写报告、写公文、写论文、写简历、写合同、改稿、追加段落、写 Excel、生成表格、公式重算、写 PPT、做演示文稿、PPT 美化、PPT 配色、PPT 优化布局、清理占位符、生成框架图、打开 PPT 画形状、写 PDF、Markdown 转 Word、套模板、填充占位符、导出 PDF、转 PDF、渲染页面、检查排版、读取文档、批量编辑文档、活动 Office 文档。
 ---
 
 # Office Writer
 
-一个能力一个入口，共 44 个脚本：其中 32 个与 mcp-office-writer 0.6.0 的 32 个工具 1:1 对应，另加 12 个本地入口：`replace_open_document_content.py`（活动文档内容替换）、`word_manage_comments.py`（批注增/列）、`word_set_properties.py`（核心属性）、`excel_add_chart.py`（已有文件加图表）、`ppt_set_hyperlinks.py`（已有文件设超链接），以及 7 个 office-native 原生入口（Word 修订/脚注/内容控件、PPT 动画切换批注/SmartArt、Excel 透视表/打印）。44 个入口默认由 C# `tools/office-native/` 执行（Open XML SDK + Office COM），`scripts/office_engine/` 作为 `OFFICE_NATIVE_ENGINE=python` 的对照/回退引擎保留；本 skill 只做 CLI 适配、JSON 契约和验收辅助，不启动 MCP 服务。
+一个能力一个入口，共 45 个脚本：其中 32 个与 mcp-office-writer 0.6.0 的 32 个工具 1:1 对应，另加 13 个本地入口：`replace_open_document_content.py`（活动文档内容替换）、`word_manage_comments.py`（批注增/列）、`word_set_properties.py`（核心属性）、`excel_add_chart.py`（已有文件加图表）、`ppt_set_hyperlinks.py`（已有文件设超链接），以及 8 个 office-native 原生入口（Word 修订/脚注/内容控件、PPT 动画切换批注/SmartArt/形状绘制、Excel 透视表/打印）。默认由 `scripts/office_engine/`（Python）执行；C# `tools/office-native/`（Open XML SDK + Office COM）作为可选后端，并自动承接 7 个 Python 未实现的入口（Word 修订/脚注/内容控件、PPT 动画切换批注/SmartArt、Excel 透视表/打印）。本 skill 只做 CLI 适配、JSON 契约和验收辅助，不启动 MCP 服务。
 
 ## 触发条件
 
@@ -13,7 +13,7 @@ description: 用 44 个独立 CLI 入口创建、编辑、读取、转换和验�
 
 - Word：写报告/公文/论文/简历/合同、套模板、Markdown 转 Word、追加内容、目录、页眉页脚、封面。
 - Excel：多工作表、表头/格式/合并/冻结/筛选、公式写入与重算。
-- PowerPoint：新建演示文稿、追加幻灯片、配色、布局优化、清理占位符、分析模板、生成框架图/流程图。
+- PowerPoint：新建演示文稿、追加幻灯片、配色、布局优化、清理占位符、分析模板、生成框架图/流程图、在已打开的演示里直接画形状。
 - PDF：新建 PDF、Office 转 PDF、逐页渲染 PNG、结构化读取、字号/字体验收。
 - 结构化编辑：按 `/body/p[1]`、`/Sheet1/A1`、`/slide[1]/shape[2]` 路径原子批量编辑。
 - 活动文档：Word/WPS、Excel/WPS 表格、PowerPoint 已打开文档的实时追加。
@@ -54,7 +54,7 @@ python -X utf8 scripts/create_word_document.py --output-path 报告.docx --param
 - 需要生成示意图/海报/插画 → 用绘图或生图工具；`ppt_create_framework_diagram` 只画阶段+节点+箭头。
 - 需要启动 Word/WPS/Excel/PowerPoint → 活动文档入口只连接现有窗口，不启动应用；转换/渲染/重算的 COM 回退是例外：它用 `DispatchEx` 启动隐藏独立实例，完成后 Quit。
 - 非 Windows 环境需要 COM 活动文档或 COM 转换 → 用文件级入口并安装 dsoffice；COM 回退会明确报不可用。
-- 未构建 office-native：默认所有入口返回退出码 3，先运行构建脚本；或设 `OFFICE_NATIVE_ENGINE=python` 回退旧引擎（修订/脚注/内容控件/动画/切换/批注/SmartArt/透视表/打印仍不可用，需人工在 Office 中处理）。
+- 未构建 office-native：默认 Python 入口不受影响；7 个 C# 专属入口（修订/脚注/内容控件/动画/切换/批注/SmartArt/透视表/打印）返回退出码 3，需先构建，或人工在 Office 中处理。
 
 ## 能力面与边界
 
@@ -68,11 +68,11 @@ Word / Excel / PPT 的逐项功能面与覆盖状态见三张矩阵；标注「�
 
 ## office-native 后端（默认）
 
-**全部 44 个入口使用 C# 实现**（Open XML SDK 文件级 + Office COM 独占能力），源码、命令与边界见 `tools/office-native/README.md`。
+**全部 45 个入口都有 C# 实现**（Open XML SDK 文件级 + Office COM 独占能力），源码、命令与边界见 `tools/office-native/README.md`。默认执行策略是 **Python 优先**：`scripts/office_engine/` 有实现的入口走 Python；7 个 Python 未实现的入口（Word 修订/脚注/内容控件、PPT 动画切换批注/SmartArt、Excel 透视表/打印）自动走 C#。
 
 - 构建：`pwsh -File tools/office-native/build.ps1`（需 .NET SDK 8.0+）；产物 `tools/office-native/dist/office-native.exe`；也可用 `OFFICE_NATIVE_BIN` 指定。
-- 切换：默认走 C#；`OFFICE_NATIVE_ENGINE=python` 可回退到旧 Python 引擎做对照或排障；`OFFICE_NATIVE_ENGINE=csharp` 可显式强制 C#。
-- 未构建时调用会返回退出码 3 并给出构建命令；需要旧引擎时设 `OFFICE_NATIVE_ENGINE=python`。
+- 切换：默认 auto（Python 优先，缺口自动走 C#）；`OFFICE_NATIVE_ENGINE=csharp` 强制 C#；`OFFICE_NATIVE_ENGINE=python` 强制 Python（C# 专属入口没有 Python 实现，仍会调用 C#）。
+- 未构建时只有 C# 专属入口返回退出码 3 并给出构建命令；Python 入口照常工作。
 - 要求 Windows + 对应 Office（SmartArt 需要带窗口打开，命令会自动处理）；修改前自动生成 `.bak-*`；COM 转换用隔离实例，不附着用户窗口。
 
 ## 能力→脚本索引
@@ -125,13 +125,14 @@ python -X utf8 scripts/<脚本名>.py --help
 | `scripts/word_set_properties.py` | Word 核心属性：读取/写入 | `--file-path`、`--list`、`--params`（`properties`） |
 | `scripts/excel_add_chart.py` | 已有 Excel 插入图表（8 类，锚点/宽高） | `--file-path`、`--sheet`、`--params`（`chart`） |
 | `scripts/ppt_set_hyperlinks.py` | 已有 PPT 设形状/文字 run 超链接 | `--file-path`、`--params`（`links`：`shape_index`/`shape_text`/`text_match`） |
-| `scripts/word_manage_revisions.py` | Word 修订：列/接受/拒绝/标记插入与删除 | `--file-path`、`--action`、`--params`（`text`/`anchor_text`/`paragraph_index`）；默认 C# |
-| `scripts/word_manage_footnotes.py` | Word 脚注：新增/列出 | `--file-path`、`--action`、`--params`（`text`/`anchor_text`）；默认 C# |
-| `scripts/word_manage_content_controls.py` | Word 内容控件：文本/日期/下拉/复选框增删改查 | `--file-path`、`--action`、`--tag`、`--params`；默认 C# |
-| `scripts/ppt_manage_effects.py` | PPT 动画/切换/批注 | `--file-path`、`--action`、`--slide`、`--params`；默认 C# |
-| `scripts/ppt_manage_smartart.py` | PPT SmartArt：列布局/插入 | `--file-path`、`--action`、`--slide`、`--params`（`layout`/`texts`）；默认 C# |
-| `scripts/excel_manage_pivots.py` | Excel 透视表：创建/列出/刷新 | `--file-path`、`--action`、`--sheet`、`--params`；默认 C# |
-| `scripts/excel_print.py` | Excel 导出 PDF / 打印 | `--file-path`、`--action`、`--sheet`、`--output`、`--params`；默认 C# |
+| `scripts/word_manage_revisions.py` | Word 修订：列/接受/拒绝/标记插入与删除 | `--file-path`、`--action`、`--params`（`text`/`anchor_text`/`paragraph_index`）；C# 专属（Python 无实现） |
+| `scripts/word_manage_footnotes.py` | Word 脚注：新增/列出 | `--file-path`、`--action`、`--params`（`text`/`anchor_text`）；C# 专属（Python 无实现） |
+| `scripts/word_manage_content_controls.py` | Word 内容控件：文本/日期/下拉/复选框增删改查 | `--file-path`、`--action`、`--tag`、`--params`；C# 专属（Python 无实现） |
+| `scripts/ppt_manage_effects.py` | PPT 动画/切换/批注 | `--file-path`、`--action`、`--slide`、`--params`；C# 专属（Python 无实现） |
+| `scripts/ppt_manage_smartart.py` | PPT SmartArt：列布局/插入 | `--file-path`、`--action`、`--slide`、`--params`（`layout`/`texts`）；C# 专属（Python 无实现） |
+| `scripts/ppt_manage_shapes.py` | PPT 形状绘制：活动文档/文件级加形状、列形状 | `--file-path`、`--action`（add/list）、`--slide`、`--params`（`shape`）；默认 Python，文件已打开走活动文档 COM，未打开走文件级并自动备份；C# 可选 |
+| `scripts/excel_manage_pivots.py` | Excel 透视表：创建/列出/刷新 | `--file-path`、`--action`、`--sheet`、`--params`；C# 专属（Python 无实现） |
+| `scripts/excel_print.py` | Excel 导出 PDF / 打印 | `--file-path`、`--action`、`--sheet`、`--output`、`--params`；C# 专属（Python 无实现） |
 
 `SectionItem.type` 另支持 `hyperlink`（`HyperlinkDef`）与 `field`（`FieldDef`：PAGE/NUMPAGES/SECTIONPAGES/DATE/TIME/FILENAME/AUTHOR/TITLE/CUSTOM）。`SheetDef` 另支持 `charts`/`conditional_formats`/`data_validations`/`tables`/`defined_names`/`hyperlinks`/`comments`/`images`/`page_setup`/`row_heights`/`sheet_state`；`SlideTableDef`/`ChartDef` 支持 x/y/width/height，`SlideImageDef` 支持四边裁剪与超链接。参数细节与 JSON 模型见 `references/cli_args.md`，全部字段（含默认值/类型/说明）见 `references/models_word.md`、`models_excel.md`、`models_ppt.md`、`models_pdf_common.md`；模型定义源在 `scripts/office_engine/models.py`。转换/渲染/重算的后端顺序用 `OFFICE_CONVERT_BACKEND=auto|dsoffice|com|none` 控制：默认 auto 依次尝试 dsoffice、Microsoft Office COM、WPS COM；dsoffice 安装与 COM 排错见 `references/conversion.md`。
 
@@ -187,6 +188,7 @@ python -X utf8 scripts/render_document_pages.py --input-path 报告.pdf --output
 | Excel 图表/条件格式/验证 | `create_excel_workbook`（`charts`/`conditional_formats`/`data_validations`）或 `excel_add_chart`（已有文件）→ `read_excel_workbook` |
 | Word 批注/属性 | `word_manage_comments`（增/列）→ `word_set_properties`（读写属性） |
 | PPT 已有文件加链接 | `read_powerpoint` 看形状 → `ppt_set_hyperlinks`（`shape_index`/`shape_text`） |
+| 在打开着的 PPT 里加形状 | `ppt_manage_shapes`（`action=add`，`slide` + `shape`）；文件已打开走活动文档 COM，无需关闭；未打开时自动走文件级并备份 |
 | 做 PPT | `ppt_list_color_schemes` 选配色 → `create_powerpoint` → `ppt_apply_color_scheme` → `ppt_optimize_slide_layout`（审阅 warnings；需要时 `--reflow` 或 `--fix-spacing`）→ `ppt_clean_unused_placeholders` → `render_document_pages` |
 | PPT 框架图 | `ppt_create_framework_diagram`（文件级）或 `ppt_add_flowchart_slide`（活动文档） |
 | 精细改某段/某格/某形状 | `inspect_office_document` 取路径 → `batch_edit_office_document`（原子）→ `read_*` 复核 |
@@ -249,7 +251,7 @@ stdout 默认只输出一个 JSON 对象，不提供 `--json` 开关；诊断写
 | 中文字号、场景排版、页眉页脚/页码域、PDF 字体 | `references/fonts_page_numbers.md` |
 | Word/Excel 表格样式、PPT 布局/配色/框架图、`--reflow` | `references/tables_slides.md` |
 | 渲染预览、pymupdf 读 span 字号、缺字体、视觉验收 | `references/render_qa.md` |
-| 44 个入口的 flag、`--params` 字段、JSON 示例 | `references/cli_args.md` |
+| 45 个入口的 flag、`--params` 字段、JSON 示例 | `references/cli_args.md` |
 | Word/Excel/PPT 逐项功能面与覆盖状态 | `references/capabilities_word.md`、`capabilities_excel.md`、`capabilities_ppt.md` |
 | C# office-native 构建、命令、COM 边界 | `tools/office-native/README.md` |
 | dsoffice/Office/WPS 后端顺序、转换/渲染/重算回退、OCR | `references/conversion.md` |
@@ -258,7 +260,10 @@ stdout 默认只输出一个 JSON 对象，不提供 `--json` 开关；诊断写
 
 ## 验证状态
 
-- **自动化**：50 项测试通过、0 跳过；覆盖 44 个入口 `--help`、固定输出全量比对、退出码 1/2/3、创建→读取→校验往返、结构/触发基线、字体回退、渲染计数修正、批量备份、PPT 越界/重叠审计与 `--reflow`、dsoffice 与真实 Office/WPS COM、COM 缺失回退、17 项 validate fixture、扫描件 OCR，以及覆盖闸门（拒绝非空、空白放行、确认覆盖生成备份、编辑生成备份）。
+- **自动化**：2026-11-20 引擎切换后全量 **64 项通过、0 跳过、0 失败**；复跑 `python -X utf8 -m unittest discover -s tests -v`。覆盖 45 个入口 `--help`、固定输出全量比对、退出码 1/2/3、创建→读取→校验往返、结构/触发基线、字体回退、渲染计数修正、批量备份、PPT 越界/重叠审计与 `--reflow`、dsoffice 与真实 Office/WPS COM、COM 缺失回退、17 项 validate fixture、扫描件 OCR，以及覆盖闸门（拒绝非空、空白放行、确认覆盖生成备份、编辑生成备份）。
+- **2026-11-20 `ppt_manage_shapes` 实测**：活动文档 add 返回 `mode=open_document`（文件开着时直接加到当前窗口并保存，无需关闭）；文件级 add 返回 `mode=file` 并生成 `.bak-*`；list 两条路径的索引/名称/位置/文本一致（`type` 在文件级为 XML 元素名、在活动文档为 Mso 类型码；`preset` 仅文件级输出）；越界 slide 返回退出码 2；渲染 PNG 核对形状位置与文字正确。
+- **2026-11-20 引擎策略调整实测**：默认改为 Python 优先，`ppt_manage_shapes` 同时具备 Python（活动文档 COM + python-pptx 文件级）与 C# 实现；三路径（默认 Python 文件级、显式 C#、活动文档 COM）add/list 与越界/非法颜色/非法尺寸退出码均通过；全量 64 项通过、0 跳过；7 个 C# 专属入口仍自动走 C#。
+- **2026-11-20 C# 视觉对齐实测**：`create_powerpoint` 的表格样式（内置 Medium Style 2 - Accent 1）、正文占位符空段与列表顺序、形状 `anchor="ctr"`、图表标题/轴/图例字号修复后，同定义双引擎内容页像素差异从 15.835% 降至 4.391%；结构差异仅剩列表承载方式（C# 占位符 vs Python 文本框）；全量 64 项通过。对比方法与数据见项目 `docs/06-PPT双引擎效果对比-2026-11.md`。
 - **2026-11-19 扩展实测**：Word 域（PAGE/NUMPAGES/DATE）、超链接、批注增/列、核心属性、TOC/分节追加；Excel 8 类图表（含散点 X/Y 引用）、条件格式、数据验证、超级表总计行、定义名称、批注、图片、页面设置；PPT 表格/图表几何、图片裁剪、形状/文字超链接、真项目符号/编号、双栏占位符、`.potx` 模板。全量 45/47 在当前非提权会话通过；2 项依赖 fake dsoffice `.cmd` 的测试在提权会话 2/2 通过。
 - **2026-11-19 office-native 实测**：Word 修订插入/接受、删除/拒绝、脚注、内容控件（文本/日期/下拉/复选框）增删改查；PPT 动画/切换/批注/SmartArt（134 个布局）；Excel 透视表创建/列出/刷新与 PDF 导出；PowerPoint/Excel 进程无残留。
 - **已实测（2026-11-15）**：dsoffice 导出 docx/xlsx/pptx→PDF 均成功；Word/Excel/PowerPoint COM 与 WPS `KWps/KET/KWPP` 均可导出；`--pages 1 --dpi 144` 渲染 1191×1684 PNG；公式重算回读合计 255/390；validate 干净 fixture 17/17、问题 fixture 命中 8 类 warning；reflow 四类形状重排后 `remaining_warning_count=0`。

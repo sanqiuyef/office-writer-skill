@@ -1,6 +1,6 @@
 # Office Writer
 
-把 mcp-office-writer 0.6.0 的 32 个文档工具拆成 32 个独立 CLI 入口，另加 12 个本地入口：5 个 Python 入口（活动文档替换、Word 批注/属性、Excel 图表、PPT 超链接）与 7 个 office-native 原生入口（Word 修订/脚注/内容控件、PPT 动画切换批注/SmartArt、Excel 透视表/打印），共 44 个入口。44 个入口默认由 C# `tools/office-native` 执行（Open XML SDK + Office COM）；`OFFICE_NATIVE_ENGINE=python` 可回退到 `scripts/office_engine/` 的 vendored 引擎做对照或排障。每个入口只做参数解析、契约校验和 JSON 输出。C# 后端构建：`pwsh -File tools/office-native/build.ps1`。skill 不依赖 MCP，不启动 MCP 服务。
+把 mcp-office-writer 0.6.0 的 32 个文档工具拆成 32 个独立 CLI 入口，另加 13 个本地入口：5 个 Python 入口（活动文档替换、Word 批注/属性、Excel 图表、PPT 超链接）与 8 个 office-native 原生入口（Word 修订/脚注/内容控件、PPT 动画切换批注/SmartArt/形状绘制、Excel 透视表/打印），共 45 个入口。默认执行策略是 Python 优先：`scripts/office_engine/` 有实现的入口走 Python；C# `tools/office-native`（Open XML SDK + Office COM）承接 7 个 Python 未实现的入口（Word 修订/脚注/内容控件、PPT 动画切换批注/SmartArt、Excel 透视表/打印），也可用 `OFFICE_NATIVE_ENGINE=csharp` 强制全量 C#。每个入口只做参数解析、契约校验和 JSON 输出。C# 后端构建：`pwsh -File tools/office-native/build.ps1`。skill 不依赖 MCP，不启动 MCP 服务。
 
 Word / Excel / PPT 的逐项功能面与覆盖状态见 `references/capabilities_word.md`、`capabilities_excel.md`、`capabilities_ppt.md`（2026-11 扩展）。
 
@@ -47,19 +47,20 @@ pip install -r requirements.txt
 
 ## 测试
 
-默认走 C# 后端：
+默认 Python 优先（7 个 C# 专属入口自动走 C#）：
 
 ```bash
 python -X utf8 -m unittest discover -s tests -v
 ```
 
-回退 Python 引擎对照：
+强制指定引擎：
 
 ```bash
 OFFICE_NATIVE_ENGINE=python python -X utf8 -m unittest discover -s tests -v
+OFFICE_NATIVE_ENGINE=csharp python -X utf8 -m unittest discover -s tests -v
 ```
 
-2026-11-20 实测：默认 C# 套件 **58 项通过、2 项跳过**；`OFFICE_NATIVE_ENGINE=python` 套件 **58 项全通过**。跳过项是 fake dsoffice 的 `.cmd` shim 在当前沙箱无法启动 `cmd.exe`（普通 Windows 终端可执行）。覆盖 44 个入口 `--help`、固定输出全量比对、退出码 1/2/3、创建→读取→校验往返、结构/触发基线、字体回退、渲染计数修正、批量备份、PPT 越界/重叠审计与 `--reflow`、dsoffice 与真实 Office/WPS COM 转换/重算、COM 缺失回退、17 项 validate 实检 fixture、扫描件 OCR、覆盖闸门，以及 4 项 P2 回归（Excel 日期/流式读取、批量合并区、PPT 图表内嵌工作簿、Word 页眉样式与分节）。有意改固定 CLI 行为后先运行：
+2026-11-20 引擎策略调整后全量实测：**64 项通过、0 跳过、0 失败**。覆盖 45 个入口 `--help`、固定输出全量比对、退出码 1/2/3、创建→读取→校验往返、结构/触发基线、字体回退、渲染计数修正、批量备份、PPT 越界/重叠审计与 `--reflow`、dsoffice 与真实 Office/WPS COM 转换/重算、COM 缺失回退、17 项 validate 实检 fixture、扫描件 OCR、覆盖闸门、`ppt_manage_shapes` 三路径（Python 文件级/显式 C#/活动文档 COM），以及 4 项 P2 回归（Excel 日期/流式读取、批量合并区、PPT 图表内嵌工作簿、Word 页眉样式与分节）。有意改固定 CLI 行为后先运行：
 
 ```bash
 python -X utf8 tests/update_expected.py
@@ -72,7 +73,7 @@ python -X utf8 tests/update_expected.py
 ## 维护
 
 - `scripts/office_engine/*.py` 是 mcp-office-writer 0.6.0（2026-11）的 vendored 副本；每个文件头写明上游路径、版本和修改点。升级上游时整包替换并同步 `tests/test_parity.py` 的 golden。
-- 本 skill 对引擎的增量：转换/渲染/重算回退链与 COM、17 项 validate 实检、PPT `reflow_slide_layout`、Word 域 XML 与封面边框顺序修正；2026-11 扩展 Word 超链接/通用域/文档属性、Excel 图表/条件格式/数据验证/超级表/名称/批注/图片/页面设置、PPT 表格与图表几何/图片裁剪/真列表/双栏占位符/`.potx`；44 个入口已全量迁移到 C# `tools/office-native/`（Open XML SDK + COM，默认引擎），旧 Python 引擎保留为 `OFFICE_NATIVE_ENGINE=python` 对照（源码在 `tools/office-native/`，二进制构建后放 `dist/`，不提交）。
+- 本 skill 对引擎的增量：转换/渲染/重算回退链与 COM、17 项 validate 实检、PPT `reflow_slide_layout`、Word 域 XML 与封面边框顺序修正；2026-11 扩展 Word 超链接/通用域/文档属性、Excel 图表/条件格式/数据验证/超级表/名称/批注/图片/页面设置、PPT 表格与图表几何/图片裁剪/真列表/双栏占位符/`.potx`、PPT 活动文档形状绘制；45 个入口都有 C# `tools/office-native/` 实现（Open XML SDK + COM），默认由 Python 引擎执行，C# 作为可选后端与 7 个缺口入口的实现（源码在 `tools/office-native/`，二进制构建后放 `dist/`，不提交）。
 - 入口脚本只保留 `build_parser()`/`run(args)`/`main()`；共享契约在 `scripts/_common.py`。新增能力应新增 1:1 入口，不把逻辑塞进 `_common.py`。
 - 素材：`templates/` 起步模板、`assets/examples/` 合成示例、`references/` 主题文档。模板/示例改动后跑测试与一次渲染验收。
 - 超时/DPI 默认值在 `config/defaults.json`；不要把密钥或机器绝对路径写进配置。

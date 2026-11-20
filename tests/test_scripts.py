@@ -150,10 +150,9 @@ REQUIRES_COM = unittest.skipUnless(
     com_is_available(), "需要 Windows + pywin32 + Microsoft Office/WPS"
 )
 
-PYTHON_ENGINE = os.environ.get("OFFICE_NATIVE_ENGINE", "").strip().lower() in {
-    "python", "legacy", "py",
-}
-CSHARP_ENGINE = not PYTHON_ENGINE
+ENGINE_SETTING = os.environ.get("OFFICE_NATIVE_ENGINE", "").strip().lower()
+PYTHON_ENGINE = ENGINE_SETTING in {"python", "legacy", "py"}
+CSHARP_ENGINE = ENGINE_SETTING in {"csharp", "native", "1", "true"}
 
 
 def _cmd_shim_available() -> bool:
@@ -216,6 +215,7 @@ ENTRY_SCRIPTS = [
     "word_manage_content_controls.py",
     "ppt_manage_effects.py",
     "ppt_manage_smartart.py",
+    "ppt_manage_shapes.py",
     "excel_manage_pivots.py",
     "excel_print.py",
 ]

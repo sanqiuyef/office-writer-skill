@@ -10,7 +10,7 @@ import os
 from contextlib import contextmanager
 from typing import Any, Iterator
 
-from .models import EditResult, FrameworkDiagram, FontConfig, ParagraphStyle, SectionItem, SheetDef, SlideDef, SlideItem, TextStyle
+from .models import EditResult, FrameworkDiagram, FontConfig, ParagraphStyle, SectionItem, SheetDef, SlideDef, SlideItem, SlideShapeDef, TextStyle
 from .utils import cn_size_to_pt
 
 
@@ -539,6 +539,210 @@ def _validated_ppt_slides(slides: list[SlideDef]) -> None:
                     )
 
 
+def _ppt_add_shape(slide: Any, sd: SlideShapeDef, default_left: float,
+                   default_top: float) -> Any:
+    """Create an AutoShape on a COM Slide and return the Shape object."""
+    shape_type = _PPT_SHAPE_TYPE_MAP.get(sd.shape_type, 1)
+    left_pt = int((sd.x if sd.x is not None else default_left) * 72)
+    top_pt = int((sd.y if sd.y is not None else default_top) * 72)
+    width_pt = int(sd.width * 72)
+    height_pt = int(sd.height * 72)
+    shape = slide.Shapes.AddShape(shape_type, left_pt, top_pt, width_pt, height_pt)
+    if sd.no_fill:
+        shape.Fill.Visible = 0  # msoFalse
+    elif sd.bg_color:
+        shape.Fill.ForeColor.RGB = _ppt_color(sd.bg_color)
+    if sd.line_color:
+        shape.Line.ForeColor.RGB = _ppt_color(sd.line_color)
+    if sd.line_width is not None:
+        shape.Line.Weight = sd.line_width
+    if sd.line_dash:
+        shape.Line.DashStyle = 2  # msoLineDash
+    if sd.text:
+        text_range = shape.TextFrame.TextRange
+        text_range.Text = sd.text
+        text_range.ParagraphFormat.Alignment = 2  # ppAlignCenter
+        if sd.vertical_text:
+            try:
+                shape.TextFrame.Orientation = 5  # msoTextOrientationVerticalFarEast
+            except Exception:
+                pass
+        if sd.font_color:
+            text_range.Font.Color.RGB = _ppt_color(sd.font_color)
+        if sd.font_size:
+            text_range.Font.Size = sd.font_size
+        else:
+            text_range.Font.Size = 12
+        if sd.bold:
+            text_range.Font.Bold = True
+    if sd.hyperlink_url:
+        try:
+            shape.ActionSettings(1).Hyperlink.Address = sd.hyperlink_url
+        except Exception:
+            pass
+    return shape
+
+
+def _find_open_ppt_presentation(file_path: str) -> tuple[Any, Any, str] | None:
+    """Return (application, presentation, prog_id) for an already-open deck."""
+    for candidate, candidate_prog_id in _active_applications(
+            ("PowerPoint.Application", "KWPP.Application")):
+        candidate_presentation = _ppt_presentation(candidate, file_path)
+        if candidate_presentation is not None:
+            return candidate, candidate_presentation, candidate_prog_id
+    return None
+
+
+def try_add_open_powerpoint_shape(file_path: str, slide_number: int,
+                                  shape_def: SlideShapeDef) -> dict[str, object] | None:
+    """Add a shape to an active presentation; return None when the file is not open."""
+    if not com_is_available():
+        return None
+    try:
+        with _com_apartment():
+            found = _find_open_ppt_presentation(file_path)
+            if found is None:
+                return None
+            application, presentation, prog_id = found
+            try:
+                read_only = bool(presentation.ReadOnly)
+            except Exception:
+                read_only = False  # WPS 个别版本不暴露 ReadOnly
+            if read_only:
+                return {
+                    "success": False,
+                    "file_path": file_path,
+                    "message": "目标演示文稿以只读方式打开，无法保存形状；请先另存为可写文件",
+                }
+            previous_alerts = None
+            try:
+                previous_alerts = application.DisplayAlerts
+            except Exception:
+                pass
+            try:
+                application.DisplayAlerts = 1  # ppAlertsNone
+            except Exception:
+                pass
+            try:
+                count = int(presentation.Slides.Count)
+                if slide_number < 1 or slide_number > count:
+                    raise ValueError(f"slide={slide_number} 超出范围（共 {count} 张）")
+                slide = presentation.Slides(slide_number)
+                shape = _ppt_add_shape(slide, shape_def, 0.5, 1.5)
+                shape_index = int(slide.Shapes.Count)
+                shape_name = str(shape.Name)
+                try:
+                    presentation.Save()
+                except Exception as exc:
+                    rolled_back = False
+                    try:
+                        shape.Delete()
+                        rolled_back = True
+                    except Exception:
+                        pass
+                    message = (
+                        f"活动 PowerPoint 保存失败，已撤销本次新增形状: {exc}"
+                        if rolled_back
+                        else "活动 PowerPoint 保存失败且自动撤销失败，"
+                             "请勿保存该演示文稿并手动删除新增形状: "
+                             f"{exc}"
+                    )
+                    return {
+                        "success": False,
+                        "file_path": file_path,
+                        "message": message,
+                    }
+                return {
+                    "success": True,
+                    "action": "add",
+                    "mode": "open_document",
+                    "file_path": file_path,
+                    "slide": slide_number,
+                    "shape_index": shape_index,
+                    "shape_name": shape_name,
+                    "engine": prog_id,
+                    "message": f"已通过 {prog_id} 向活动文档第 {slide_number} 张幻灯片添加形状",
+                }
+            except ValueError:
+                raise
+            except Exception as exc:
+                return {"success": False, "file_path": file_path, "message": str(exc)}
+            finally:
+                if previous_alerts is not None:
+                    try:
+                        application.DisplayAlerts = previous_alerts
+                    except Exception:
+                        pass
+    except ValueError:
+        raise
+    except Exception as exc:
+        return {
+            "success": False,
+            "file_path": file_path,
+            "message": f"活动 PowerPoint 演示文稿操作失败: {exc}",
+        }
+
+
+def try_list_open_powerpoint_shapes(file_path: str,
+                                    slide_number: int) -> dict[str, object] | None:
+    """List shapes on an active slide; return None when the file is not open."""
+    if not com_is_available():
+        return None
+    try:
+        with _com_apartment():
+            found = _find_open_ppt_presentation(file_path)
+            if found is None:
+                return None
+            application, presentation, prog_id = found
+            try:
+                count = int(presentation.Slides.Count)
+                if slide_number < 1 or slide_number > count:
+                    raise ValueError(f"slide={slide_number} 超出范围（共 {count} 张）")
+                slide = presentation.Slides(slide_number)
+                items = []
+                for index in range(1, int(slide.Shapes.Count) + 1):
+                    shape = slide.Shapes.Item(index)
+                    text = ""
+                    try:
+                        if shape.HasTextFrame and shape.TextFrame.HasText:
+                            text = str(shape.TextFrame.TextRange.Text).replace("\r", "\n")
+                    except Exception:
+                        pass
+                    items.append({
+                        "index": index,
+                        "shape_id": int(shape.Id),
+                        "name": str(shape.Name),
+                        "type": int(shape.Type),
+                        "x": round(float(shape.Left) / 72.0, 4),
+                        "y": round(float(shape.Top) / 72.0, 4),
+                        "width": round(float(shape.Width) / 72.0, 4),
+                        "height": round(float(shape.Height) / 72.0, 4),
+                        "text": text,
+                    })
+                return {
+                    "success": True,
+                    "action": "list",
+                    "mode": "open_document",
+                    "file_path": file_path,
+                    "slide": slide_number,
+                    "count": len(items),
+                    "shapes": items,
+                    "engine": prog_id,
+                }
+            except ValueError:
+                raise
+            except Exception as exc:
+                return {"success": False, "file_path": file_path, "message": str(exc)}
+    except ValueError:
+        raise
+    except Exception as exc:
+        return {
+            "success": False,
+            "file_path": file_path,
+            "message": f"活动 PowerPoint 演示文稿操作失败: {exc}",
+        }
+
+
 def _ppt_add_content_to_slide(slide: Any, items: list[SlideItem] | None,
                                default_left: float, default_top: float,
                                default_width: float, default_height: float) -> None:
@@ -605,38 +809,7 @@ def _ppt_add_content_to_slide(slide: Any, items: list[SlideItem] | None,
             slide.Shapes.AddPicture(img_path, False, True, left_pt, top_pt, width_pt, height_pt)
 
         elif item.type == "shape" and item.shape:
-            sd = item.shape
-            shape_type = _PPT_SHAPE_TYPE_MAP.get(sd.shape_type, 1)
-            left_pt = int((sd.x if sd.x is not None else default_left) * 72)
-            top_pt = int((sd.y if sd.y is not None else default_top) * 72)
-            width_pt = int(sd.width * 72)
-            height_pt = int(sd.height * 72)
-            shape = slide.Shapes.AddShape(shape_type, left_pt, top_pt, width_pt, height_pt)
-            if sd.no_fill:
-                shape.Fill.Visible = 0  # msoFalse
-            elif sd.bg_color:
-                shape.Fill.ForeColor.RGB = _ppt_color(sd.bg_color)
-            if sd.line_color:
-                shape.Line.ForeColor.RGB = _ppt_color(sd.line_color)
-            if sd.line_width is not None:
-                shape.Line.Weight = sd.line_width
-            if sd.line_dash:
-                shape.Line.DashStyle = 2  # msoLineDash
-            if sd.text:
-                text_range = shape.TextFrame.TextRange
-                text_range.Text = sd.text
-                text_range.ParagraphFormat.Alignment = 2  # ppAlignCenter
-                if sd.vertical_text:
-                    try:
-                        shape.TextFrame.Orientation = 5  # msoTextOrientationVerticalFarEast
-                    except Exception:
-                        pass
-                if sd.font_color:
-                    text_range.Font.Color.RGB = _ppt_color(sd.font_color)
-                if sd.font_size:
-                    text_range.Font.Size = sd.font_size
-                if sd.bold:
-                    text_range.Font.Bold = True
+            _ppt_add_shape(slide, item.shape, default_left, default_top)
 
         elif item.type == "connector" and item.connector:
             cd = item.connector

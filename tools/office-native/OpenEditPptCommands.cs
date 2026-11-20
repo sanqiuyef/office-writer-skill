@@ -454,6 +454,13 @@ internal static class OpenEditPptCommands
     private static void AddShape(
         dynamic slide, PptSlideShape shapeDef, double defaultLeft, double defaultTop)
     {
+        NativeCommon.ReleaseCom(AddShapeFromDef(slide, shapeDef, defaultLeft, defaultTop));
+    }
+
+    /// <summary>创建形状并返回 COM 对象；调用方负责 ReleaseCom。</summary>
+    internal static dynamic AddShapeFromDef(
+        dynamic slide, PptSlideShape shapeDef, double defaultLeft, double defaultTop)
+    {
         var shapeType = ShapeTypeMap.GetValueOrDefault(shapeDef.ShapeType, 1);
         dynamic shape = slide.Shapes.AddShape(shapeType,
             Pt(shapeDef.X ?? defaultLeft), Pt(shapeDef.Y ?? defaultTop),
@@ -489,13 +496,97 @@ internal static class OpenEditPptCommands
                         OpenEditCommon.HexToBgr(shapeDef.FontColor, "文字颜色");
                 if (shapeDef.FontSize is not null)
                     textRange.Font.Size = shapeDef.FontSize.Value;
+                else
+                    textRange.Font.Size = 12;
                 if (shapeDef.Bold == true)
                     textRange.Font.Bold = true;
             }
+
+            if (!string.IsNullOrWhiteSpace(shapeDef.HyperlinkUrl))
+            {
+                try
+                {
+                    shape.ActionSettings[1].Hyperlink.Address = shapeDef.HyperlinkUrl;
+                }
+                catch
+                {
+                    /* WPS/旧版本不支持形状超链接，保持形状本身可用 */
+                }
+            }
+            return shape;
+        }
+        catch
+        {
+            try { shape.Delete(); } catch { /* 回滚尽力而为 */ }
+            NativeCommon.ReleaseCom(shape);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 目标演示已在 PowerPoint/WPS 中打开时，向指定幻灯片添加形状并保存；
+    /// 未找到活动文档时返回 null（供文件级 ppt-shapes 回退）。
+    /// </summary>
+    internal static Dictionary<string, object?>? TryAddShapeToOpenPresentation(
+        string filePath, int slideNumber, PptSlideShape shapeDef)
+    {
+        var app = OpenEditCommon.FindPowerPoint(filePath, out var presentation, out var progId);
+        if (app is null || presentation is null)
+        {
+            NativeCommon.ReleaseCom(presentation);
+            NativeCommon.ReleaseCom(app);
+            return null;
+        }
+        var previousAlerts = GetDisplayAlerts(app);
+        SetDisplayAlerts(app, 1); // ppAlertsNone
+        dynamic? slide = null;
+        dynamic? shapes = null;
+        dynamic? shape = null;
+        try
+        {
+            OpenEditCommon.EnsureWritablePresentation(presentation);
+            var slideCount = (int)presentation.Slides.Count;
+            if (slideNumber < 1 || slideNumber > slideCount)
+                throw new NativeUsageException(
+                    $"slide={slideNumber} 超出范围（共 {slideCount} 张）");
+            slide = presentation.Slides.Item(slideNumber);
+            shapes = slide.Shapes;
+            shape = AddShapeFromDef(slide, shapeDef, 0.5, 1.5);
+            var shapeIndex = (int)shapes.Count;
+            var shapeName = (string)shape.Name;
+            try
+            {
+                OpenEditCommon.SavePresentation(presentation);
+            }
+            catch (Exception error)
+            {
+                var rolledBack = false;
+                try { shape.Delete(); rolledBack = true; } catch { /* 回滚尽力而为 */ }
+                throw new NativeRuntimeException(rolledBack
+                    ? $"活动 PowerPoint 保存失败，已撤销本次新增形状: {error.Message}"
+                    : $"活动 PowerPoint 保存失败且自动撤销失败，请勿保存该演示文稿并手动删除新增形状: {error.Message}");
+            }
+            return new Dictionary<string, object?>
+            {
+                ["success"] = true,
+                ["action"] = "add",
+                ["mode"] = "open_document",
+                ["file_path"] = filePath,
+                ["slide"] = slideNumber,
+                ["shape_index"] = shapeIndex,
+                ["shape_name"] = shapeName,
+                ["engine"] = progId,
+                ["message"] = $"已通过 {progId} 向活动文档第 {slideNumber} 张幻灯片添加形状",
+            };
         }
         finally
         {
             NativeCommon.ReleaseCom(shape);
+            NativeCommon.ReleaseCom(shapes);
+            NativeCommon.ReleaseCom(slide);
+            RestoreDisplayAlerts(app, previousAlerts);
+            NativeCommon.ReleaseCom(presentation);
+            NativeCommon.ReleaseCom(app);
         }
     }
 

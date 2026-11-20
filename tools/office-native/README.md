@@ -1,6 +1,6 @@
-# office-native（默认 C# 后端）
+# office-native（可选 C# 后端，默认 Python 优先）
 
-office-writer 的 **全量 C# 引擎**：44 个 CLI 入口全部有对应命令，使用 **Open XML SDK 3.5.1** 做文件级读写，**Office COM** 只补独占能力（活动文档、动画/切换/批注/SmartArt、透视表、打印、Office→PDF）。
+office-writer 的 **全量 C# 引擎**：45 个 CLI 入口全部有对应命令，使用 **Open XML SDK 3.5.1** 做文件级读写，**Office COM** 只补独占能力（活动文档、动画/切换/批注/SmartArt、形状绘制、透视表、打印、Office→PDF）。默认执行策略是 Python 优先：只有 `_native.CSHARP_ONLY` 中的 7 个入口（Word 修订/脚注/内容控件、PPT 动画切换批注/SmartArt、Excel 透视表/打印）自动走本后端；其余入口默认走 `scripts/office_engine/`，可用 `OFFICE_NATIVE_ENGINE=csharp` 强制全量 C#。
 
 - Word：创建/编辑/Markdown/读取/校验/模板合并/批注/属性/修订/脚注/内容控件/场景与封面。
 - Excel：创建/编辑/读取/8 类图表/条件格式/数据验证/超级表/定义名称/批注/图片/页面设置/透视表/打印。
@@ -52,6 +52,7 @@ stdout 只输出一个 JSON：`{"ok":true,"tool":"...","data":{...}}`；退出�
 | `word-content-controls` | add-text / add-date / add-dropdown / add-checkbox / list / set / remove | `file_path`、`tag`、`alias`、`text`、`date`、`date_format`、`items`、`value`、`checked` |
 | `ppt-effects` | animations-add / animations-list / animations-clear / transition-set / transition-clear / transition-list / comments-add / comments-list / comments-delete | `file_path`、`slide`、`shape_index`、`effect`、`duration`、`advance_time`、`text`、`author` |
 | `ppt-smartart` | layouts / add | `file_path`、`slide`、`layout`、`texts`、`x/y/width/height`（英寸） |
+| `ppt-shapes` | add / list | `file_path`、`slide`、`shape`（`shape_type`、`x/y/width/height` 英寸、`text`、`bg_color`、`font_color`、`font_size`、`bold`、`no_fill`、`line_color`、`line_width`、`line_dash`、`vertical_text`、`hyperlink_url`）；文件已打开时向活动文档添加并保存，未打开时文件级写入并备份 |
 | `excel-pivots` | create / list / refresh | `file_path`、`source_sheet`、`source_range`、`target_sheet`、`target_cell`、`name`、`row_field`、`column_field`、`data_field`、`function` |
 | `excel-print` | pdf / print | `file_path`、`sheet`、`output`、`printer`、`copies`、`confirm_print` |
 | `create-word-document` / `edit-word-document` / `create-word-from-markdown` / `read-word-document` / `validate-word-document` / `word-set-properties` / `word-manage-comments` / `merge-office-template` | — | `output_path`/`file_path`、`content`、`scene`、`cover_config`、`append_sections`、`properties`、`template_path`/`data` |
@@ -98,7 +99,7 @@ stdout 只输出一个 JSON：`{"ok":true,"tool":"...","data":{...}}`；退出�
 
 ## 引擎切换
 
-Python 入口默认走 C#：**全部 44 个入口**按 `_native.COMMANDS` 映射把同一份参数转给 `office-native.exe`；`OFFICE_NATIVE_ENGINE=python`（或 `legacy`/`py`）可回退旧引擎做对照/排障，`OFFICE_NATIVE_ENGINE=csharp`（或 `native`/`1`/`true`）可显式强制 C#。参数通过 stdin 传递，避免 Windows 32K 命令行上限。
+Python 入口默认走 Python 引擎；**`_native.CSHARP_ONLY` 中的 7 个入口**按 `_native.COMMANDS` 映射把同一份参数转给 `office-native.exe`；`OFFICE_NATIVE_ENGINE=csharp`（或 `native`/`1`/`true`）可强制全量 C#，`OFFICE_NATIVE_ENGINE=python`（或 `legacy`/`py`）可强制 Python（C# 专属入口无 Python 实现，仍会调用 C#）。参数通过 stdin 传递，避免 Windows 32K 命令行上限。
 
 ```bash
 python scripts/read_txt_document.py --file-path a.txt
@@ -106,8 +107,8 @@ OFFICE_NATIVE_ENGINE=python python scripts/read_txt_document.py --file-path a.tx
 OFFICE_CONVERT_BACKEND=com python scripts/convert_to_pdf.py --input-path a.xlsx --output-path a.pdf
 ```
 
-已完成 C# 实现的入口：全部 44 个（Word/Excel/PPT 文件级、PDF、通用、活动文档、批量编辑）。`tests/test_native_parity.py` 对 Word/Excel/PPT 创建、Word 校验、txt 读取做 Python↔C# 等价对比。
+已完成 C# 实现的入口：全部 45 个（Word/Excel/PPT 文件级、PDF、通用、活动文档、批量编辑、PPT 形状绘制）。`tests/test_native_parity.py` 对 Word/Excel/PPT 创建、Word 校验、txt 读取做 Python↔C# 等价对比。
 
 ## 与 Python 入口的关系
 
-44 个 Python 脚本只做参数校验与 JSON 转发；能力实现全部在本后端。旧 Python 引擎（`scripts/office_engine/`）保留为 `OFFICE_NATIVE_ENGINE=python` 的对照实现。
+45 个 Python 脚本只做参数校验与 JSON 转发；能力实现全部在本后端。旧 Python 引擎（`scripts/office_engine/`）保留为 `OFFICE_NATIVE_ENGINE=python` 的对照实现。
