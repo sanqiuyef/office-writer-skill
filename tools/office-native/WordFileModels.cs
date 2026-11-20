@@ -304,6 +304,12 @@ internal sealed class PageSetup
     public double? MarginBottom { get; init; }
     public double? MarginLeft { get; init; }
     public double? MarginRight { get; init; }
+    public int? Columns { get; init; }
+    public double? ColumnSpacing { get; init; }
+    public string? PageBorder { get; init; }
+    public string? PageBorderColor { get; init; }
+    public string? WatermarkText { get; init; }
+    public string? WatermarkColor { get; init; }
 
     public static PageSetup? ParseOptional(JsonElement parent, string name)
     {
@@ -321,6 +327,16 @@ internal sealed class PageSetup
             : "A4";
         if (paper is not null && paper is not ("A4" or "Letter" or "A3" or "B5"))
             throw new NativeUsageException("paper_size 必须是 A4/Letter/A3/B5");
+        var columns = WordJson.OptInt(value, "columns");
+        if (columns is < 1 or > 4)
+            throw new NativeUsageException("columns 必须是 1-4 的整数");
+        var columnSpacing = WordJson.OptDouble(value, "column_spacing");
+        if (columnSpacing is <= 0)
+            throw new NativeUsageException("column_spacing 必须大于 0（英寸）");
+        var border = WordJson.OptString(value, "page_border");
+        if (border is not null && border is not ("single" or "double" or "dashed" or "dotted"))
+            throw new NativeUsageException(
+                "page_border 必须是 single/double/dashed/dotted 之一");
         return new PageSetup
         {
             Orientation = orientation,
@@ -329,6 +345,12 @@ internal sealed class PageSetup
             MarginBottom = WordJson.OptDouble(value, "margin_bottom"),
             MarginLeft = WordJson.OptDouble(value, "margin_left"),
             MarginRight = WordJson.OptDouble(value, "margin_right"),
+            Columns = columns,
+            ColumnSpacing = columnSpacing,
+            PageBorder = border,
+            PageBorderColor = WordJson.OptColor(value, "page_border_color"),
+            WatermarkText = WordJson.OptString(value, "watermark_text"),
+            WatermarkColor = WordJson.OptColor(value, "watermark_color"),
         };
     }
 }
@@ -488,6 +510,27 @@ internal sealed class FieldDef
     }
 }
 
+internal sealed class BookmarkDef
+{
+    private static readonly Regex NamePattern =
+        new("^[A-Za-z_][A-Za-z0-9_]{0,39}$", RegexOptions.Compiled);
+
+    public string Name { get; init; } = "";
+
+    public static BookmarkDef Parse(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Object)
+            throw new NativeUsageException("bookmark 必须是对象");
+        var name = WordJson.OptString(value, "name");
+        var text = (name ?? "").Trim();
+        if (!NamePattern.IsMatch(text))
+            throw new NativeUsageException(
+                "书签名不合法：必须以字母或下划线开头，仅含字母、数字、下划线，"
+                + $"长度 1-40 字符: '{name}'");
+        return new BookmarkDef { Name = text };
+    }
+}
+
 internal sealed class SectionItem
 {
     public string Type { get; init; } = "";
@@ -501,11 +544,13 @@ internal sealed class SectionItem
     public string? TocLevels { get; init; }
     public HyperlinkDef? Hyperlink { get; init; }
     public FieldDef? Field { get; init; }
+    public BookmarkDef? Bookmark { get; init; }
 
     private static readonly HashSet<string> AllowedTypes =
     [
         "heading", "paragraph", "table", "image", "page_break", "bullet_list",
         "numbered_list", "code", "toc", "section_break", "hyperlink", "field",
+        "bookmark",
     ];
 
     public static SectionItem Parse(JsonElement value)
@@ -516,13 +561,19 @@ internal sealed class SectionItem
         if (string.IsNullOrWhiteSpace(type) || !AllowedTypes.Contains(type))
             throw new NativeUsageException(
                 "type 必须是 heading/paragraph/table/image/page_break/bullet_list/"
-                + "numbered_list/code/toc/section_break/hyperlink/field");
+                + "numbered_list/code/toc/section_break/hyperlink/field/bookmark");
         var hyperlink = HyperlinkDef.ParseOptional(value, "hyperlink");
         var field = FieldDef.ParseOptional(value, "field");
+        var bookmark = WordJson.TryGet(value, "bookmark", out var bookmarkElement)
+                       && bookmarkElement.ValueKind == JsonValueKind.Object
+            ? BookmarkDef.Parse(bookmarkElement)
+            : null;
         if (type == "hyperlink" && hyperlink is null)
             throw new NativeUsageException("type=hyperlink 时必须提供 hyperlink 定义");
         if (type == "field" && field is null)
             throw new NativeUsageException("type=field 时必须提供 field 定义");
+        if (type == "bookmark" && bookmark is null)
+            throw new NativeUsageException("type=bookmark 时必须提供 bookmark 定义");
         return new SectionItem
         {
             Type = type,
@@ -539,6 +590,7 @@ internal sealed class SectionItem
             TocLevels = WordJson.OptString(value, "toc_levels"),
             Hyperlink = hyperlink,
             Field = field,
+            Bookmark = bookmark,
         };
     }
 }

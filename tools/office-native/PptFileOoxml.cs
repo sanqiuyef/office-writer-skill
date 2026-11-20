@@ -14,6 +14,10 @@ internal static class PptFileOoxml
     public static readonly XNamespace P = "http://schemas.openxmlformats.org/presentationml/2006/main";
     public static readonly XNamespace R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
     public static readonly XNamespace C = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+    public static readonly XNamespace P14 = "http://schemas.microsoft.com/office/powerpoint/2010/main";
+
+    public const string SectionExtensionUri = "{521415D9-36F7-43E2-AB2F-B90AF26B5E84}";
+    public const string DefaultSectionName = "默认节";
 
     public const long EmuPerInch = 914400;
     public const long EmuPerPoint = 12700;
@@ -507,6 +511,417 @@ internal static class PptFileOoxml
                     GroupProperties(), GroupTransform(), placeholders)),
             new XElement(P + "clrMapOvr",
                 new XElement(A + "masterClrMapping")));
+    }
+
+    // ── 页脚 / 页码 ──────────────────────────────────────────────
+
+    public const double FooterBoxWidthInches = 8.0;
+    public const double FooterBoxHeightInches = 0.35;
+    public const double FooterBoxTopInches = 7.0;
+    public const double FooterBottomMarginInches = 0.5;
+    public const double SlideNumberBoxWidthInches = 1.2;
+    public const double SlideNumberRightMarginInches = 0.5;
+    public const int FooterFontSizePoints = 12;
+    public const string FooterGrayHex = "808080";
+
+    public readonly record struct FooterGeometry(
+        double FooterLeft, double FooterWidth, double NumberLeft, double NumberWidth, double Top);
+
+    /// <summary>页脚/页码文本框几何（英寸）；与 ppt_writer._footer_geometry 对齐。</summary>
+    public static FooterGeometry FooterGeometryFor(double slideWidthInches,
+        double slideHeightInches)
+    {
+        var top = Math.Min(FooterBoxTopInches,
+            Math.Max(0.0, slideHeightInches - FooterBottomMarginInches));
+        var footerWidth = Math.Min(FooterBoxWidthInches,
+            Math.Max(1.0, slideWidthInches - 1.0));
+        var numberWidth = Math.Min(SlideNumberBoxWidthInches,
+            Math.Max(0.6, slideWidthInches - 2.0));
+        return new FooterGeometry(
+            FooterLeft: (slideWidthInches - footerWidth) / 2,
+            FooterWidth: footerWidth,
+            NumberLeft: Math.Max(0.2,
+                slideWidthInches - numberWidth - SlideNumberRightMarginInches),
+            NumberWidth: numberWidth,
+            Top: top);
+    }
+
+    /// <summary>
+    /// 在 spTree 中查找指定类型的占位符（footer/sldNum）。版式占位符可能没有 spPr 几何，
+    /// 需要向版式/母版回溯，否则拿不到可复制的 xfrm。
+    /// </summary>
+    public static XElement? FindPlaceholderOnSlide(XElement tree, string type)
+    {
+        return ShapeElements(tree).FirstOrDefault(shape =>
+        {
+            var info = PlaceholderInfo(shape);
+            return info is not null && info.Value.Type is not null
+                   && string.Equals(info.Value.Type, type, StringComparison.OrdinalIgnoreCase);
+        });
+    }
+
+    /// <summary>
+    /// 写页脚文字：优先填充幻灯片上已有的 footer 占位符；没有则从版式克隆，
+    /// 再没有则按统一几何新建文本框。不触碰标题/正文等已有占位符。
+    /// </summary>
+    public static void ApplyFooter(XDocument slide, string text,
+        SlideContext context, FooterGeometry geometry, uint newId)
+    {
+        var tree = SlideTree(slide);
+        var placeholder = FindPlaceholderOnSlide(tree, "ftr")
+                          ?? ClonePlaceholderFromLayout(slide, "ftr", context, newId);
+        if (placeholder is not null)
+        {
+            SetPlaceholderText(placeholder, text);
+            return;
+        }
+        tree.Add(BuildFooterTextbox(newId, text, geometry.FooterLeft, geometry.FooterWidth,
+            geometry.Top, "ctr"));
+    }
+
+    /// <summary>写页码：占位符优先；否则新建右下角文本框，内容是 slidenum 域。</summary>
+    public static void ApplySlideNumber(XDocument slide,
+        int slideNumber, SlideContext context, FooterGeometry geometry, uint newId)
+    {
+        var tree = SlideTree(slide);
+        var placeholder = FindPlaceholderOnSlide(tree, "sldNum")
+                          ?? ClonePlaceholderFromLayout(slide, "sldNum", context, newId);
+        if (placeholder is not null)
+        {
+            SetPlaceholderField(placeholder, slideNumber);
+            return;
+        }
+        var box = BuildFooterTextbox(newId, null, geometry.NumberLeft, geometry.NumberWidth,
+            geometry.Top, "r");
+        var paragraph = box.Element(P + "txBody")!.Elements(A + "p").Last();
+        paragraph.Add(BuildSlideNumberField(slideNumber));
+        tree.Add(box);
+    }
+
+    /// <summary>从版式复制 footer/sldNum 占位符到幻灯片；版式没有则返回 null。</summary>
+    private static XElement? ClonePlaceholderFromLayout(XDocument slide,
+        string type, SlideContext context, uint newId)
+    {
+        if (context.Layout is null)
+            return null;
+        var layoutShape = ShapeElements(context.Layout)
+            .FirstOrDefault(shape =>
+            {
+                var info = PlaceholderInfo(shape);
+                return info is not null && string.Equals(info.Value.Type, type,
+                    StringComparison.OrdinalIgnoreCase);
+            });
+        if (layoutShape is null)
+            return null;
+
+        var info = PlaceholderInfo(layoutShape)!.Value;
+        var tree = SlideTree(slide);
+        var nextId = Math.Max(newId, 2);
+        var sourceXfrm = layoutShape.Element(P + "spPr")?.Element(A + "xfrm");
+        if (sourceXfrm is null && context.Master is not null)
+        {
+            sourceXfrm = ShapeElements(context.Master)
+                .Where(shape => PlaceholderInfo(shape)?.Type is { } masterType
+                    && string.Equals(masterType, type, StringComparison.OrdinalIgnoreCase))
+                .Select(shape => shape.Element(P + "spPr")?.Element(A + "xfrm"))
+                .FirstOrDefault(xfrm => xfrm is not null);
+        }
+        var shapeProperties = new XElement(P + "spPr");
+        if (sourceXfrm is not null)
+            shapeProperties.Add(new XElement(sourceXfrm));
+
+        var sourceTextBody = layoutShape.Element(P + "txBody");
+        var textBody = new XElement(P + "txBody");
+        var sourceBodyProperties = sourceTextBody?.Element(A + "bodyPr");
+        textBody.Add(sourceBodyProperties is null
+            ? new XElement(A + "bodyPr")
+            : new XElement(sourceBodyProperties));
+        var sourceListStyle = sourceTextBody?.Element(A + "lstStyle");
+        if (sourceListStyle is not null)
+            textBody.Add(new XElement(sourceListStyle));
+        textBody.Add(new XElement(A + "p"));
+
+        var name = ShapeName(layoutShape);
+        var clonePh = new XElement(P + "ph",
+            new XAttribute("type", type),
+            new XAttribute("idx", info.Idx.ToString(CultureInfo.InvariantCulture)));
+        // 版式常带 sz/orient（如 sz="quarter"），一并保留以维持 PowerPoint 的占位符语义。
+        var layoutPh = layoutShape.Element(P + "nvSpPr")?.Element(P + "nvPr")
+            ?.Element(P + "ph");
+        foreach (var attributeName in new[] { "sz", "orient" })
+        {
+            var value = (string?)layoutPh?.Attribute(attributeName);
+            if (!string.IsNullOrWhiteSpace(value))
+                clonePh.SetAttributeValue(attributeName, value);
+        }
+        var clone = new XElement(P + "sp",
+            new XElement(P + "nvSpPr",
+                new XElement(P + "cNvPr",
+                    new XAttribute("id", nextId),
+                    new XAttribute("name", string.IsNullOrWhiteSpace(name)
+                        ? $"Placeholder {nextId}"
+                        : name)),
+                new XElement(P + "cNvSpPr",
+                    new XElement(A + "spLocks", new XAttribute("noGrp", "1"))),
+                new XElement(P + "nvPr", clonePh)),
+            shapeProperties,
+            textBody);
+        tree.Add(clone);
+        return clone;
+    }
+
+    private static void SetPlaceholderText(XElement shape, string text)
+    {
+        var textBody = shape.Element(P + "txBody");
+        if (textBody is null)
+        {
+            textBody = new XElement(P + "txBody",
+                new XElement(A + "bodyPr"),
+                new XElement(A + "lstStyle"));
+            shape.Add(textBody);
+        }
+        foreach (var paragraph in textBody.Elements(A + "p").ToList())
+            paragraph.Remove();
+        var textParagraph = new XElement(A + "p",
+            new XElement(A + "pPr", new XAttribute("algn", "ctr")),
+            new XElement(A + "r", new XElement(A + "t", text)));
+        textBody.Add(textParagraph);
+    }
+
+    private static void SetPlaceholderField(XElement shape, int slideNumber)
+    {
+        var textBody = shape.Element(P + "txBody");
+        if (textBody is null)
+        {
+            textBody = new XElement(P + "txBody",
+                new XElement(A + "bodyPr"),
+                new XElement(A + "lstStyle"));
+            shape.Add(textBody);
+        }
+        foreach (var paragraph in textBody.Elements(A + "p").ToList())
+            paragraph.Remove();
+        textBody.Add(new XElement(A + "p",
+            new XElement(A + "pPr", new XAttribute("algn", "r")),
+            BuildSlideNumberField(slideNumber)));
+    }
+
+    /// <summary>DrawingML 幻灯片编号域（缓存文本为当前页码）。</summary>
+    public static XElement BuildSlideNumberField(int slideNumber) =>
+        new(A + "fld",
+            new XAttribute("id", "{" + Guid.NewGuid().ToString().ToUpperInvariant() + "}"),
+            new XAttribute("type", "slidenum"),
+            new XElement(A + "rPr",
+                new XAttribute("lang", "zh-CN"),
+                new XAttribute("sz", FooterFontSizePoints * 100),
+                new XElement(A + "solidFill",
+                    new XElement(A + "srgbClr", new XAttribute("val", FooterGrayHex))),
+                new XElement(A + "latin", new XAttribute("typeface", "+mn-lt")),
+                new XElement(A + "ea", new XAttribute("typeface", "+mn-ea"))),
+            new XElement(A + "t", slideNumber.ToString(CultureInfo.InvariantCulture)));
+
+    private static XElement BuildFooterTextbox(uint id, string? text,
+        double left, double width, double top, string alignment)
+    {
+        // algn 属于 a:pPr；直接写在 a:p 上 Schema 不认（会报 'algn' attribute is not declared）。
+        var paragraph = new XElement(A + "p",
+            new XElement(A + "pPr", new XAttribute("algn", alignment)));
+        if (!string.IsNullOrEmpty(text))
+        {
+            paragraph.Add(new XElement(A + "r",
+                new XElement(A + "rPr",
+                    new XAttribute("lang", "zh-CN"),
+                    new XAttribute("sz", FooterFontSizePoints * 100),
+                    new XElement(A + "solidFill",
+                        new XElement(A + "srgbClr", new XAttribute("val", FooterGrayHex))),
+                    new XElement(A + "latin", new XAttribute("typeface", "+mn-lt")),
+                    new XElement(A + "ea", new XAttribute("typeface", "+mn-ea"))),
+                new XElement(A + "t", text)));
+        }
+        return new XElement(P + "sp",
+            new XElement(P + "nvSpPr",
+                new XElement(P + "cNvPr",
+                    new XAttribute("id", id), new XAttribute("name", $"TextBox {id}")),
+                new XElement(P + "cNvSpPr", new XAttribute("txBox", "1")),
+                new XElement(P + "nvPr")),
+            new XElement(P + "spPr",
+                XfrmElement(Inches(left), Inches(top), Inches(width),
+                    Inches(FooterBoxHeightInches)),
+                new XElement(A + "prstGeom", new XAttribute("prst", "rect"),
+                    new XElement(A + "avLst")),
+                new XElement(A + "noFill")),
+            new XElement(P + "txBody",
+                // 不写 spAutoFit：保留声明的 0.35in 高度，避免 PowerPoint 打开后按文字缩框。
+                new XElement(A + "bodyPr", new XAttribute("wrap", "square")),
+                new XElement(A + "lstStyle"),
+                paragraph));
+    }
+
+    // ── 节（p14:sectionLst）─────────────────────────────────────
+
+    /// <summary>
+    /// 把 sections 换算为 (name, first, last) 的 1 基闭区间。
+    /// 每节覆盖 slide_start 到下一节 slide_start 前一张，末节到最后一张；
+    /// 第一节 slide_start&gt;1 时，前面的幻灯片归入「默认节」。
+    /// </summary>
+    public static List<(string Name, int First, int Last)> SectionRanges(
+        IReadOnlyList<PptSectionDef> sections, int slideCount)
+    {
+        var ranges = new List<(string Name, int First, int Last)>();
+        if (sections.Count == 0)
+            return ranges;
+        if (slideCount <= 0)
+            throw new NativeRuntimeException("演示文稿没有幻灯片，无法写入节");
+        if (sections.Count > slideCount)
+            throw new NativeUsageException(
+                $"sections 有 {sections.Count} 个节，超过幻灯片总数 {slideCount}");
+
+        var previous = 0;
+        for (var index = 0; index < sections.Count; index++)
+        {
+            var section = sections[index];
+            var name = (section.Name ?? "").Trim();
+            if (name.Length == 0)
+                throw new NativeUsageException($"sections[{index}] 的 name 不能为空");
+            if (section.SlideStart < 1 || section.SlideStart > slideCount)
+                throw new NativeUsageException(
+                    $"节「{name}」的 slide_start={section.SlideStart} "
+                    + $"超出范围 1..{slideCount}");
+            if (section.SlideStart <= previous)
+                throw new NativeUsageException(
+                    $"节「{name}」的 slide_start={section.SlideStart} "
+                    + $"未严格升序（前一节为 {previous}）");
+            previous = section.SlideStart;
+        }
+
+        if (sections[0].SlideStart > 1)
+            ranges.Add((DefaultSectionName, 1, sections[0].SlideStart - 1));
+        for (var index = 0; index < sections.Count; index++)
+        {
+            var first = sections[index].SlideStart;
+            var last = index + 1 < sections.Count
+                ? sections[index + 1].SlideStart - 1
+                : slideCount;
+            ranges.Add((sections[index].Name.Trim(), first, last));
+        }
+        return ranges;
+    }
+
+    /// <summary>把 sections 写入 presentation.xml 的 p:extLst/p:ext/p14:sectionLst。</summary>
+    public static void WriteSections(PresentationPart part,
+        IReadOnlyList<PptSectionDef> sections)
+    {
+        var presentation = part.Presentation;
+        var slideIds = presentation.SlideIdList?
+            .Elements<XPresentation.SlideId>()
+            .Select(slideId => slideId.Id?.Value ?? 0)
+            .Where(id => id > 0)
+            .ToList() ?? [];
+        var ranges = SectionRanges(sections, slideIds.Count);
+        if (ranges.Count == 0)
+            return;
+
+        var root = XDocument.Parse(presentation.OuterXml).Root
+                   ?? throw new NativeRuntimeException("presentation.xml 解析失败");
+        var extensionList = root.Element(P + "extLst");
+        if (extensionList is null)
+        {
+            extensionList = new XElement(P + "extLst");
+            root.Add(extensionList);
+        }
+        foreach (var old in extensionList.Elements(P + "ext")
+                     .Where(ext => (string?)ext.Attribute("uri") == SectionExtensionUri)
+                     .ToList())
+            old.Remove();
+
+        var sectionsElement = new XElement(P14 + "sectionLst",
+            new XAttribute(XNamespace.Xmlns + "p14", P14));
+        foreach (var (name, first, last) in ranges)
+        {
+            var slideIdList = new XElement(P14 + "sldIdLst");
+            foreach (var slideId in slideIds.Skip(first - 1).Take(last - first + 1))
+                slideIdList.Add(new XElement(P14 + "sldId",
+                    new XAttribute("id", slideId.ToString(CultureInfo.InvariantCulture))));
+            sectionsElement.Add(new XElement(P14 + "section",
+                new XAttribute("name", name),
+                new XAttribute("id", "{" + Guid.NewGuid().ToString().ToUpperInvariant() + "}"),
+                slideIdList));
+        }
+        extensionList.Add(new XElement(P + "ext",
+            new XAttribute("uri", SectionExtensionUri),
+            sectionsElement));
+
+        part.Presentation = new XPresentation.Presentation(
+            root.ToString(SaveOptions.DisableFormatting));
+    }
+
+    // ── 放映设置（presProps.xml 的 p:showPr）─────────────────────
+
+    /// <summary>
+    /// 把放映设置写入 ppt/presProps.xml 的 p:presentationPr/p:showPr。
+    /// CT_Presentation 不含 showPr（OpenXml SDK 校验报 invalid child），
+    /// PowerPoint 也只从 presProps.xml 读，因此这里改 presProps 部件。
+    /// </summary>
+    public static void WriteShowSettings(PresentationPart part,
+        PptShowSettingsDef settings)
+    {
+        var slideCount = SlideParts(part).Count;
+        var start = settings.RangeStart;
+        var end = settings.RangeEnd;
+        if (start is not null || end is not null)
+        {
+            var rangeStart = start ?? 1;
+            var rangeEnd = end ?? slideCount;
+            if (rangeStart < 1 || rangeEnd < 1)
+                throw new NativeUsageException(
+                    "show_settings 的 range 起点/终点必须 >= 1（1 起）");
+            if (rangeEnd < rangeStart)
+                throw new NativeUsageException(
+                    $"show_settings 的 range 不合法：range_end={rangeEnd} "
+                    + $"小于 range_start={rangeStart}");
+            if (rangeEnd > slideCount)
+                throw new NativeUsageException(
+                    $"show_settings 的 range 终点 {rangeEnd} 超出幻灯片总数 {slideCount}");
+        }
+
+        var propertiesPart = part.PresentationPropertiesPart
+                             ?? part.AddNewPart<PresentationPropertiesPart>();
+        var root = XDocument.Parse(propertiesPart.PresentationProperties?.OuterXml
+                                   ?? "<p:presentationPr "
+                                   + "xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" "
+                                   + "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" "
+                                   + "xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\"/>")
+            .Root ?? throw new NativeRuntimeException("presProps.xml 解析失败");
+
+        foreach (var old in root.Elements(P + "showPr").ToList())
+            old.Remove();
+
+        var showProperties = new XElement(P + "showPr",
+            new XAttribute("loop", settings.Loop ? "1" : "0"),
+            new XAttribute("showNarration", settings.ShowNarration ? "1" : "0"),
+            new XAttribute("showAnimation", settings.ShowAnimation ? "1" : "0"),
+            new XAttribute("useTimings", settings.UseTimings ? "1" : "0"),
+            new XElement(P + settings.ShowType switch
+            {
+                "browse" => "browse",
+                "kiosk" => "kiosk",
+                _ => "present",
+            }));
+        if (start is not null || end is not null)
+        {
+            showProperties.Add(new XElement(P + "sldRg",
+                new XAttribute("st", (start ?? 1).ToString(CultureInfo.InvariantCulture)),
+                new XAttribute("end", (end ?? slideCount)
+                    .ToString(CultureInfo.InvariantCulture))));
+        }
+
+        var anchor = root.Element(P + "clrMru") ?? root.Element(P + "extLst");
+        if (anchor is not null)
+            anchor.AddBeforeSelf(showProperties);
+        else
+            root.Add(showProperties);
+
+        propertiesPart.PresentationProperties = new XPresentation.PresentationProperties(
+            root.ToString(SaveOptions.DisableFormatting));
     }
 
     // ── 备注母版/备注页 ──────────────────────────────────────────

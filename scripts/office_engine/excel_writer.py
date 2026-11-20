@@ -3,6 +3,7 @@
 # Modifications: added italic/vertical alignment/borders, column-format width and font fields, row heights,
 # sheet visibility, charts, conditional formats, data validations, tables, defined names, hyperlinks,
 # comments, images and page setup; shared helpers are reused by excel_add_chart.
+# Also added sheet protection and multi-key row sorting (with autoFilter sortState) for SheetDef.
 
 """
 mcp-office-writer - Excel (.xlsx) 写入/编辑逻辑
@@ -10,6 +11,9 @@ mcp-office-writer - Excel (.xlsx) 写入/编辑逻辑
 from __future__ import annotations
 
 import logging
+import math
+import re
+from functools import cmp_to_key
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -34,9 +38,14 @@ from openpyxl.formatting.rule import (
     IconSetRule,
 )
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from openpyxl.utils import get_column_letter, range_boundaries, range_to_tuple
+from openpyxl.utils import (
+    column_index_from_string,
+    get_column_letter,
+    range_boundaries,
+    range_to_tuple,
+)
 from openpyxl.workbook.defined_name import DefinedName
-from openpyxl.worksheet.filters import AutoFilter
+from openpyxl.worksheet.filters import AutoFilter, SortCondition, SortState
 from openpyxl.worksheet.properties import PageSetupProperties
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
@@ -55,6 +64,7 @@ if TYPE_CHECKING:
         ExcelPageSetupDef,
         ExcelTableDef,
         SheetDef,
+        SheetProtectionDef,
     )
 
 logger = logging.getLogger(__name__)
@@ -530,8 +540,284 @@ def _paper_size_value(ws, paper_size: str) -> int:
     return getattr(ws, constant)
 
 
+# ── 工作表保护 ───────────────────────────────────────────────────
+
+# openpyxl 的 SheetProtection 布尔属性 True 表示“禁止”，与模型的 allow_* 语义相反。
+_PROTECTION_ALLOW_FLAGS = (
+    ("formatCells", "allow_format_cells"),
+    ("formatColumns", "allow_format_columns"),
+    ("formatRows", "allow_format_rows"),
+    ("insertRows", "allow_insert_rows"),
+    ("insertColumns", "allow_insert_columns"),
+    ("deleteRows", "allow_delete_rows"),
+    ("deleteColumns", "allow_delete_columns"),
+    ("sort", "allow_sort"),
+    ("autoFilter", "allow_auto_filter"),
+    ("selectLockedCells", "allow_select_locked_cells"),
+    ("selectUnlockedCells", "allow_select_unlocked_cells"),
+)
+
+
+def apply_sheet_protection(ws, protection: SheetProtectionDef) -> None:
+    """启用工作表保护：密码交给 openpyxl 转 legacy hash，allow_* 取反写入禁止位。"""
+    guard = ws.protection
+    if protection.password:
+        # openpyxl 的 password setter 会顺带启用保护，并且存的是 hash 而不是明文。
+        guard.password = protection.password
+    guard.sheet = True
+    for attribute, field in _PROTECTION_ALLOW_FLAGS:
+        setattr(guard, attribute, not getattr(protection, field))
+
+
+# ── 按行排序 ─────────────────────────────────────────────────────
+
+_COLUMN_LETTER_RE = re.compile(r"^[A-Za-z]{1,3}$")
+_COLUMN_NUMBER_RE = re.compile(r"^\d+$")
+_MAX_COLUMNS = 16384
+# 排序值类别：数字 < 字符串 < 空（None 永远排最后）
+_RANK_NUMBER = 0
+_RANK_STRING = 1
+_RANK_EMPTY = 2
+
+
+class _SheetSortPlan:
+    """排序计划：重排后的数据行 + 列/方向 + sortState 区域。"""
+
+    __slots__ = ("rows", "columns", "descending", "ref")
+
+    def __init__(self, rows, columns, descending, ref):
+        self.rows = rows
+        self.columns = columns
+        self.descending = descending
+        self.ref = ref
+
+
+def _sort_value(value):
+    """把单元格值归一为 (类别, 比较键)；类别只用于区分数字/字符串/空。"""
+    if isinstance(value, bool):
+        # bool 是 int 子类：按 1/0 当数字处理，与 C# 后端保持一致。
+        return (_RANK_NUMBER, int(value))
+    if isinstance(value, int):
+        return (_RANK_NUMBER, value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return (_RANK_EMPTY, None)
+        return (_RANK_NUMBER, value)
+    if isinstance(value, str):
+        if not value:
+            # Excel 把空字符串视同空白单元格。
+            return (_RANK_EMPTY, None)
+        # 先不区分大小写，再按原值兜底，保证同字母不同大小写有稳定次序。
+        return (_RANK_STRING, (value.lower(), value))
+    return (_RANK_EMPTY, None)
+
+
+def _compare_sort_values(left, right) -> int:
+    """比较同类别（都是数字或都是字符串）的两个归一值，返回 -1/0/1。"""
+    left_rank, left_value = left
+    right_rank, right_value = right
+    if left_rank != right_rank:
+        # 仅在升降序一致的类别比较里用到；空值由调用方单独处理。
+        return -1 if left_rank < right_rank else 1
+    if left_rank == _RANK_EMPTY:
+        return 0
+    if left_rank == _RANK_NUMBER:
+        if left_value == right_value:
+            return 0
+        return -1 if left_value < right_value else 1
+    if left_value[0] != right_value[0]:
+        return -1 if left_value[0] < right_value[0] else 1
+    if left_value[1] == right_value[1]:
+        return 0
+    return -1 if left_value[1] < right_value[1] else 1
+
+
+def _sort_cell_value(row, column: int):
+    """取数据行中第 column 列（1 基）的值；短行按空值处理。"""
+    index = column - 1
+    return row[index] if 0 <= index < len(row) else None
+
+
+def _resolve_sort_column(
+    sheet_def: SheetDef, key_column: str, columns_written: int, has_header: bool
+) -> int:
+    """把排序键解析成 1 基列号：有表头按表头名，无表头按列字母/列号。"""
+    text = key_column.strip()
+    if has_header:
+        headers = sheet_def.headers or []
+        if not headers:
+            raise ValueError(
+                "排序配置 has_header=true，但工作表未提供 headers，无法按表头名定位排序列"
+            )
+        if text in headers:
+            return headers.index(text) + 1
+        folded = text.casefold()
+        for index, header in enumerate(headers, 1):
+            if str(header).casefold() == folded:
+                return index
+        raise ValueError(
+            f"排序键列 {key_column!r} 不在表头中（可用表头: "
+            f"{', '.join(str(header) for header in headers)}）"
+        )
+
+    if _COLUMN_LETTER_RE.match(text):
+        column = column_index_from_string(text.upper())
+    elif _COLUMN_NUMBER_RE.match(text):
+        column = int(text)
+    else:
+        raise ValueError(f"排序列必须是列字母（如 'B'）或 1 基数列号: {key_column!r}")
+    if column < 1 or column > _MAX_COLUMNS:
+        raise ValueError(f"排序列号超出工作表列范围 1-{_MAX_COLUMNS}: {key_column!r}")
+    if column > columns_written:
+        raise ValueError(
+            f"排序列 {text!r} 超出数据范围（本次仅写入 {columns_written} 列）"
+        )
+    return column
+
+
+def _written_columns(sheet_def: SheetDef) -> int:
+    counts = [len(row) for row in sheet_def.data]
+    if sheet_def.headers:
+        counts.append(len(sheet_def.headers))
+    return max(counts, default=0)
+
+
+def _sort_range_bounds(sheet_def: SheetDef):
+    """解析 sort.range（允许带 Sheet 前缀，仅取边界）；未指定时返回 None。"""
+    if sheet_def.sort is None or not sheet_def.sort.range:
+        return None
+    text = sheet_def.sort.range.strip()
+    try:
+        boundaries = range_to_tuple(text)[1] if "!" in text else range_boundaries(text)
+    except ValueError as exc:
+        raise ValueError(f"无效的排序区域: {sheet_def.sort.range!r}") from exc
+    if any(item is None for item in boundaries):
+        raise ValueError(
+            f"排序区域必须包含具体行列（如 A1:C10），不支持整列/整行: {sheet_def.sort.range!r}"
+        )
+    return boundaries
+
+
+def prepare_sheet_sort(sheet_def: SheetDef) -> _SheetSortPlan | None:
+    """按 SheetDef.sort 稳定多键重排本次写入的数据行；未配置排序时返回 None。"""
+    if sheet_def.sort is None:
+        return None
+    if sheet_def.merged_cells:
+        raise ValueError(
+            "工作表同时配置了 merged_cells 与 sort：排序会移动合并区域并破坏合并，"
+            "请去掉 merged_cells 或改为写入已排好序的数据"
+        )
+
+    sort = sheet_def.sort
+    if sort.has_header and not sheet_def.headers:
+        raise ValueError(
+            "排序配置 has_header=true，但工作表未提供 headers，无法按表头名定位排序列"
+        )
+    columns_written = _written_columns(sheet_def)
+    if columns_written == 0:
+        raise ValueError("排序配置了 sort，但工作表没有任何表头或数据列")
+    columns = [
+        _resolve_sort_column(sheet_def, key.column, columns_written, sort.has_header)
+        for key in sort.keys
+    ]
+    descending = [not key.ascending for key in sort.keys]
+
+    bounds = _sort_range_bounds(sheet_def)
+    if bounds is not None:
+        min_col, _, max_col, _ = bounds
+        for key, column in zip(sort.keys, columns):
+            if not min_col <= column <= max_col:
+                raise ValueError(
+                    f"排序键 {key.column!r}（第 {column} 列）不在排序区域 "
+                    f"{sort.range!r} 的列范围内"
+                )
+
+    rows = list(sheet_def.data)
+    # 表头行永远不参与排序，避免表头被数据顶走。
+    data_start_row = 2 if sheet_def.headers else 1
+    if bounds is None:
+        selected = list(range(len(rows)))
+    else:
+        min_row, max_row = bounds[1], bounds[3]
+        selected = [
+            index for index in range(len(rows))
+            if min_row <= data_start_row + index <= max_row
+        ]
+    if not selected:
+        if bounds is None:
+            raise ValueError("排序配置了 sort，但没有可排序的数据行")
+        raise ValueError(
+            f"排序区域 {sort.range!r} 未覆盖任何数据行（数据从第 {data_start_row} 行开始）"
+        )
+
+    keyed = [
+        ([_sort_value(_sort_cell_value(rows[index], column)) for column in columns], index)
+        for index in selected
+    ]
+
+    def compare(left, right) -> int:
+        for position, (left_value, right_value) in enumerate(zip(left[0], right[0])):
+            left_blank = left_value[0] == _RANK_EMPTY
+            right_blank = right_value[0] == _RANK_EMPTY
+            # Excel 升序/降序都保持空白单元格在末尾，所以空白判定不受方向影响。
+            if left_blank or right_blank:
+                if left_blank and right_blank:
+                    continue
+                return 1 if left_blank else -1
+            result = _compare_sort_values(left_value, right_value)
+            if result:
+                return -result if descending[position] else result
+        return 0
+
+    keyed.sort(key=cmp_to_key(compare))
+    ordered = [rows[index] for _, index in keyed]
+    for position, index in enumerate(selected):
+        rows[index] = ordered[position]
+
+    sort_ref = None
+    if bounds is not None:
+        min_col, min_row, max_col, max_row = bounds
+        sort_ref = (
+            f"{get_column_letter(min_col)}{min_row}:{get_column_letter(max_col)}{max_row}"
+        )
+    return _SheetSortPlan(rows, columns, descending, sort_ref)
+
+
+def _sort_state_ref(plan: _SheetSortPlan, sheet_def: SheetDef, filter_ref: str) -> str:
+    """sortState 的区域：优先 sort.range，否则与筛选区域一致（含表头行）。"""
+    if plan.ref:
+        return plan.ref
+    return filter_ref
+
+
+def attach_sort_state(ws, sheet_def: SheetDef, plan: _SheetSortPlan) -> None:
+    """在自动筛选上追加 sortState/sortCondition；没有 autoFilter 时不额外造元素。"""
+    if not ws.auto_filter.ref:
+        return
+    ref = _sort_state_ref(plan, sheet_def, ws.auto_filter.ref)
+    _, min_row, _, max_row = range_boundaries(ref)
+    # 与 Excel/openpyxl 一致：sortState 区域含表头，sortCondition 只覆盖数据行。
+    data_start_row = 2 if sheet_def.headers else 1
+    if min_row < data_start_row <= max_row:
+        min_row = data_start_row
+    conditions = []
+    for column, is_descending in zip(plan.columns, plan.descending):
+        letter = get_column_letter(column)
+        conditions.append(
+            SortCondition(
+                ref=f"{letter}{min_row}:{letter}{max_row}",
+                descending=True if is_descending else None,
+            )
+        )
+    ws.auto_filter.sortState = SortState(ref=ref, sortCondition=conditions)
+
+
 def _write_sheet(ws, sheet_def: SheetDef, workbook=None):
     """写入一个工作表"""
+
+    # 排序在写行之前完成：计划失败时整张表都不写入，避免留下半成品。
+    sort_plan = prepare_sheet_sort(sheet_def)
+    data_rows = sort_plan.rows if sort_plan is not None else sheet_def.data
 
     # 写入表头
     if sheet_def.headers:
@@ -545,7 +831,7 @@ def _write_sheet(ws, sheet_def: SheetDef, workbook=None):
     start_row = 2 if sheet_def.headers else 1
 
     # 写入数据
-    for ri, row_data in enumerate(sheet_def.data, start_row):
+    for ri, row_data in enumerate(data_rows, start_row):
         for ci, val in enumerate(row_data, 1):
             cell = ws.cell(row=ri, column=ci)
             # 公式识别：字符串以 = 开头
@@ -586,11 +872,13 @@ def _write_sheet(ws, sheet_def: SheetDef, workbook=None):
     if sheet_def.freeze:
         ws.freeze_panes = sheet_def.freeze
 
-    # 自动筛选
-    if sheet_def.auto_filter and sheet_def.headers and sheet_def.data:
+    # 自动筛选（排序只写进 autoFilter 的 sortState，不额外造 autoFilter）
+    if sheet_def.auto_filter and sheet_def.headers and data_rows:
         last_col = len(sheet_def.headers)
-        last_row = len(sheet_def.data) + (1 if sheet_def.headers else 0)
+        last_row = len(data_rows) + (1 if sheet_def.headers else 0)
         ws.auto_filter.ref = f"A1:{get_column_letter(last_col)}{last_row}"
+        if sort_plan is not None:
+            attach_sort_state(ws, sheet_def, sort_plan)
 
     # Sheet 标签颜色
     if sheet_def.tab_color:
@@ -643,6 +931,10 @@ def _write_sheet(ws, sheet_def: SheetDef, workbook=None):
             result = add_chart_to_sheet(ws, chart, owner)
             for warning in result["warnings"]:
                 logger.warning("%s: %s", sheet_def.name, warning)
+
+    # 工作表保护：放在数据/合并/筛选之后，避免保护位影响本次写入。
+    if sheet_def.protection:
+        apply_sheet_protection(ws, sheet_def.protection)
 
 
 def create_excel_workbook(

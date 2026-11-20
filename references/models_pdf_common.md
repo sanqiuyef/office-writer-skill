@@ -110,7 +110,7 @@ Word 活动文档的按标题替换节。
 | `heading_text` | `str` | 必填 | 定位标题文字 |
 | `heading_match` | `Literal['exact', 'contains']` | 'contains' | 标题匹配方式 |
 | `end_heading_text` | `str \| None` |  | 结束标题文字（不含）；为空则到下一个同级或更高级标题 |
-| `keep_heading` | `bool` | True | 是否保留标题段落 |
+| `keep_heading` | `bool` | true | 是否保留标题段落 |
 | `lines` | `list[str]` | 工厂 | 替换后的内容行，每行一段 |
 | `font` | `FontConfig \| None` |  | 新内容字体 |
 
@@ -122,7 +122,7 @@ Word 活动文档的按标题替换节。
 |:---|:---|:---|:---|
 | `find` | `str` | 必填 | 待查找文本 |
 | `replace` | `str` | '' | 替换文本 |
-| `match_case` | `bool` | False | 是否区分大小写 |
+| `match_case` | `bool` | false | 是否区分大小写 |
 
 ## `WordCommentDef`
 
@@ -135,7 +135,7 @@ Word 批注（锚定到正文文字或段落）
 | `initials` | `str` | 'OW' | 作者缩写 |
 | `anchor_text` | `str \| None` |  | 锚定文字：命中的第一处 run 上添加批注 |
 | `paragraph_index` | `int \| None` |  | 锚定到第 N 个正文段落（1 起）；与 anchor_text 二选一 |
-| `match_case` | `bool` | False | anchor_text 是否区分大小写 |
+| `match_case` | `bool` | false | anchor_text 是否区分大小写 |
 
 ## `PptHyperlinkDef`
 
@@ -148,4 +148,4 @@ PPT 超链接（按形状或形状内文字定位）
 | `shape_index` | `int \| None` |  | 形状序号（1 起，对应 inspect 路径 /slide[n]/shape[i]） |
 | `shape_text` | `str \| None` |  | 按形状文字包含匹配定位 |
 | `text_match` | `str \| None` |  | 仅给形状内匹配的文字 run 加链接；留空则整个形状可点击 |
-| `match_case` | `bool` | False | text_match 是否区分大小写 |
+| `match_case` | `bool` | false | text_match 是否区分大小写 |

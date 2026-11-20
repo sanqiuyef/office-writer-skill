@@ -33,7 +33,7 @@ Excel 图表定义（插入到指定工作表）
 | `title` | `str \| None` |  |  |
 | `data_range` | `str` | 必填 | 数据区域，如 'A1:C10' 或 'Sheet1!A1:C10'（首行/首列可作系列名与分类名） |
 | `categories_range` | `str \| None` |  | 分类轴区域，如 'A2:A10'；缺省时由 data_range 推断 |
-| `titles_from_data` | `bool` | True | data_range 首行是否作为系列名 |
+| `titles_from_data` | `bool` | true | data_range 首行是否作为系列名 |
 | `anchor` | `str` | 'E2' | 图表左上角锚点单元格，如 'E2' |
 | `width` | `float` | 15 | 图表宽度 (cm) |
 | `height` | `float` | 8 | 图表高度 (cm) |
@@ -70,8 +70,8 @@ Excel 数据验证规则
 | `type` | `Literal['list', 'whole', 'decimal', 'date', 'time', 'textLength', 'custom']` | 'list' | 验证类型 |
 | `formula1` | `str` | 必填 | 条件 1；list 类型为逗号分隔值或区域引用，如 '"是,否"' 或 '=$D$1:$D$5' |
 | `formula2` | `str \| None` |  | 条件 2（between 类验证使用） |
-| `allow_blank` | `bool` | True | 是否允许空值 |
-| `show_dropdown` | `bool` | True | list 类型是否显示下拉箭头 |
+| `allow_blank` | `bool` | true | 是否允许空值 |
+| `show_dropdown` | `bool` | true | list 类型是否显示下拉箭头 |
 | `prompt_title` | `str \| None` |  |  |
 | `prompt` | `str \| None` |  |  |
 | `error_title` | `str \| None` |  |  |
@@ -86,8 +86,8 @@ Excel 超级表（ListObject）定义
 | `range` | `str` | 必填 | 表格区域，如 'A1:D10'（必须包含表头行） |
 | `name` | `str` | 必填 | 表格名称（不含空格） |
 | `style` | `str` | 'TableStyleMedium2' | 表格样式名 |
-| `show_row_stripes` | `bool` | True |  |
-| `show_totals_row` | `bool` | False |  |
+| `show_row_stripes` | `bool` | true |  |
+| `show_totals_row` | `bool` | false |  |
 
 ## `DefinedNameDef`
 
@@ -97,7 +97,7 @@ Excel 定义名称
 |:---|:---|:---|:---|
 | `name` | `str` | 必填 | 名称，如 'SalesTotal' |
 | `refers_to` | `str` | 必填 | 引用内容，如 'Sheet1!$B$2:$B$10' 或 '=SUM(Sheet1!$B$2:$B$10)' |
-| `local` | `bool` | False | True 表示只作用于当前工作表 |
+| `local` | `bool` | false | True 表示只作用于当前工作表 |
 
 ## `ExcelHyperlinkDef`
 
@@ -150,6 +150,44 @@ Excel 打印与页面设置
 | `center_horizontally` | `bool \| None` |  |  |
 | `center_vertically` | `bool \| None` |  |  |
 
+## `SheetProtectionDef`
+
+工作表保护（allow_* 为 True 表示允许该操作）
+
+| 字段 | 类型 | 默认 | 说明 |
+|:---|:---|:---|:---|
+| `password` | `str \| None` |  | 保护密码（明文，写入 OOXML hash） |
+| `allow_select_locked_cells` | `bool` | true | 允许选中锁定单元格 |
+| `allow_select_unlocked_cells` | `bool` | true | 允许选中未锁定单元格 |
+| `allow_format_cells` | `bool` | false |  |
+| `allow_format_columns` | `bool` | false |  |
+| `allow_format_rows` | `bool` | false |  |
+| `allow_insert_rows` | `bool` | false |  |
+| `allow_insert_columns` | `bool` | false |  |
+| `allow_delete_rows` | `bool` | false |  |
+| `allow_delete_columns` | `bool` | false |  |
+| `allow_sort` | `bool` | false |  |
+| `allow_auto_filter` | `bool` | false |  |
+
+## `SortKeyDef`
+
+排序键：column 为表头名；has_header=false 时可用列字母，如 'B'
+
+| 字段 | 类型 | 默认 | 说明 |
+|:---|:---|:---|:---|
+| `column` | `str` | 必填 | 表头名或列字母 |
+| `ascending` | `bool` | true | 是否升序 |
+
+## `ExcelSortDef`
+
+按行排序（写数据后重排行，并写 sortState）
+
+| 字段 | 类型 | 默认 | 说明 |
+|:---|:---|:---|:---|
+| `range` | `str \| None` |  | 排序区域，如 'A1:D20'；默认整个已用区域 |
+| `keys` | `list[SortKeyDef]` | 必填 | 排序键，按顺序比较 |
+| `has_header` | `bool` | true | 首行是否为表头 |
+
 ## `SheetDef`
 
 Excel 工作表定义
@@ -159,14 +197,14 @@ Excel 工作表定义
 | `name` | `str` | 必填 | 工作表名称 |
 | `headers` | `list[str] \| None` |  | 表头行 |
 | `data` | `list[list]` | 工厂 | 数据行（支持 str/int/float/None） |
-| `allow_formulas` | `bool` | False | 是否将以 = 开头的字符串写为 Excel 公式；默认按纯文本写入 |
+| `allow_formulas` | `bool` | false | 是否将以 = 开头的字符串写为 Excel 公式；默认按纯文本写入 |
 | `column_widths` | `list[float] \| None` |  | 列宽 (字符数) |
 | `row_heights` | `dict[int, float] \| None` |  | 行高（行号→磅值），如 {"1": 24} |
 | `header_style` | `CellStyle \| None` |  | 表头样式 |
 | `column_formats` | `list[ColumnFormat] \| None` |  | 按列格式 |
 | `merged_cells` | `list[MergeRange] \| None` |  | 合并单元格 |
 | `freeze` | `str \| None` |  | 冻结窗格，如 'A2' 冻结首行 |
-| `auto_filter` | `bool` | False | 是否启用自动筛选 |
+| `auto_filter` | `bool` | false | 是否启用自动筛选 |
 | `tab_color` | `str \| None` |  | 工作表标签颜色 HEX |
 | `sheet_state` | `Literal['visible', 'hidden', 'veryHidden']` | 'visible' | 工作表可见性 |
 | `charts` | `list[ExcelChartDef] \| None` |  | 插入的图表 |
@@ -178,6 +216,8 @@ Excel 工作表定义
 | `comments` | `list[ExcelCommentDef] \| None` |  | 单元格批注 |
 | `images` | `list[ExcelImageDef] \| None` |  | 插入图片 |
 | `page_setup` | `ExcelPageSetupDef \| None` |  | 打印与页面设置 |
+| `protection` | `SheetProtectionDef \| None` |  | 工作表保护 |
+| `sort` | `ExcelSortDef \| None` |  | 写数据后按行排序 |
 
 ## `ExcelContent`
 

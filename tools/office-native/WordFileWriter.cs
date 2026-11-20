@@ -14,6 +14,7 @@ internal sealed class WordFileBuilder
     private readonly SceneProfile? _scene;
     private readonly WordListNumbering _numbering;
     private int _docPrId;
+    private int? _nextBookmarkId;
 
     public WordFileBuilder(
         MainDocumentPart main, FontConfig? defaultFont, SceneProfile? scene = null)
@@ -66,6 +67,9 @@ internal sealed class WordFileBuilder
                 break;
             case "field":
                 AddField(item);
+                break;
+            case "bookmark":
+                AddBookmark(item);
                 break;
             default:
                 throw new NativeUsageException($"未知的内容块类型: {item.Type}");
@@ -582,6 +586,69 @@ internal sealed class WordFileBuilder
             WordFileOoxml.BuildFieldParagraph(field, FormatFromStyle(item.Style)));
     }
 
+    private void AddBookmark(SectionItem item)
+    {
+        var definition = item.Bookmark
+                         ?? throw new NativeUsageException(
+                             "type=bookmark 时必须提供 bookmark 定义");
+        if (_body.Descendants<BookmarkStart>()
+            .Any(start => start.Name?.Value == definition.Name))
+            throw new NativeUsageException($"书签名已存在: '{definition.Name}'");
+        var paragraph = new Paragraph();
+        if (item.Style is not null)
+        {
+            var properties = WordFileOoxml.BuildParagraphProperties(
+                FormatFromStyle(item.Style));
+            if (properties.HasChildren)
+                paragraph.Append(properties);
+        }
+        var startId = AllocateBookmarkId();
+        paragraph.Append(new BookmarkStart
+        {
+            Id = startId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            Name = definition.Name,
+        });
+        if (!string.IsNullOrEmpty(item.Text))
+        {
+            var style = item.Style;
+            var format = new WordRunFormat
+            {
+                FontName = FirstNonEmpty(style?.FontName, _scene?.FontName, _defaultFont?.Name),
+                SizePt = style?.SizePt ?? _scene?.BodySizePt ?? _defaultFont?.SizePt,
+                Bold = style?.Bold,
+                Italic = style?.Italic,
+                Color = style?.Color,
+            };
+            foreach (var chunk in WordFileOoxml.SplitLongText(item.Text))
+                paragraph.Append(WordFileOoxml.NewTextRun(chunk, format));
+        }
+        paragraph.Append(new BookmarkEnd
+        {
+            Id = startId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        });
+        WordFileOoxml.AppendBodyElement(_body, paragraph);
+    }
+
+    /// <summary>Bookmark ids are document-unique: max existing id + 1, then sequential.</summary>
+    private int AllocateBookmarkId()
+    {
+        if (_nextBookmarkId is null)
+        {
+            var maxId = -1;
+            foreach (var start in _body.Descendants<BookmarkStart>())
+            {
+                if (int.TryParse(start.Id?.Value,
+                        System.Globalization.NumberStyles.Integer,
+                        System.Globalization.CultureInfo.InvariantCulture, out var parsed))
+                    maxId = Math.Max(maxId, parsed);
+            }
+            _nextBookmarkId = maxId + 1;
+        }
+        var id = _nextBookmarkId!.Value;
+        _nextBookmarkId = id + 1;
+        return id;
+    }
+
     private static WordParagraphFormat? FormatFromStyle(ParagraphStyle? style)
     {
         if (style is null)
@@ -714,6 +781,9 @@ internal static class WordFileWriter
             WordFileOoxml.ApplyPageSetup(body, pageSetup);
         if (headerFooter is not null)
             WordFileOoxml.ApplyHeaderFooter(main, headerFooter);
+        if (pageSetup is { WatermarkText: not null } || pageSetup?.WatermarkColor is not null)
+            WordFileOoxml.ApplyWatermark(
+                main, pageSetup.WatermarkText, pageSetup.WatermarkColor);
         var builder = new WordFileBuilder(main, defaultFont, scene);
         foreach (var section in content.Sections)
             builder.Add(section);

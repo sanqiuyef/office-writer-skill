@@ -26,6 +26,13 @@ def run(args):
     if native.use_csharp(TOOL):
         return native.run_entry_from_args(TOOL, args, params)
     output_path = common.arg(args, params, "output_path", required=True)
+    if params.get("sections") or params.get("show_settings") or any(
+            isinstance(item, dict) and (item.get("footer_text") or item.get("show_slide_number"))
+            for item in (params.get("slides") or [])):
+        raise common.UsageError(
+            "sections/show_settings/footer_text/show_slide_number 仅 C# 后端支持；"
+            "请去掉 OFFICE_NATIVE_ENGINE=python"
+        )
     slides = common.model_list_arg(params, "slides", SlideDef)
     template = common.arg(args, params, "template")
     if_exists = common.output_policy(args, params, output_path)

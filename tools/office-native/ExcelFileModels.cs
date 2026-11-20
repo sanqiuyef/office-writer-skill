@@ -156,6 +156,36 @@ internal sealed class ExcelPageSetupDef
     public bool? CenterVertically { get; init; }
 }
 
+/// <summary>工作表保护；Allow* 为 true 表示允许该操作（与 OOXML 的禁止位相反）。</summary>
+internal sealed class ExcelSheetProtectionDef
+{
+    public string? Password { get; init; }
+    public bool AllowSelectLockedCells { get; init; } = true;
+    public bool AllowSelectUnlockedCells { get; init; } = true;
+    public bool AllowFormatCells { get; init; }
+    public bool AllowFormatColumns { get; init; }
+    public bool AllowFormatRows { get; init; }
+    public bool AllowInsertRows { get; init; }
+    public bool AllowInsertColumns { get; init; }
+    public bool AllowDeleteRows { get; init; }
+    public bool AllowDeleteColumns { get; init; }
+    public bool AllowSort { get; init; }
+    public bool AllowAutoFilter { get; init; }
+}
+
+internal sealed class ExcelSortKeyDef
+{
+    public string Column { get; init; } = "";
+    public bool Ascending { get; init; } = true;
+}
+
+internal sealed class ExcelSortDef
+{
+    public string? Range { get; init; }
+    public List<ExcelSortKeyDef> Keys { get; init; } = [];
+    public bool HasHeader { get; init; } = true;
+}
+
 internal sealed class ExcelSheetDef
 {
     public string Name { get; init; } = "";
@@ -180,6 +210,8 @@ internal sealed class ExcelSheetDef
     public List<ExcelCommentDef>? Comments { get; init; }
     public List<ExcelImageDef>? Images { get; init; }
     public ExcelPageSetupDef? PageSetup { get; init; }
+    public ExcelSheetProtectionDef? Protection { get; init; }
+    public ExcelSortDef? Sort { get; init; }
 }
 
 // ── A1 引用工具 ──────────────────────────────────────────────────
@@ -451,8 +483,69 @@ internal static class ExcelModelParser
             Comments = ParseList(Get(e, "comments"), $"{label}.comments", ParseComment),
             Images = ParseList(Get(e, "images"), $"{label}.images", ParseImage),
             PageSetup = Get(e, "page_setup") is { } ps ? ParsePageSetup(ps, $"{label}.page_setup") : null,
+            Protection = Get(e, "protection") is { } pr
+                ? ParseProtection(pr, $"{label}.protection")
+                : null,
+            Sort = Get(e, "sort") is { } st ? ParseSort(st, $"{label}.sort") : null,
         };
         return sheet;
+    }
+
+    private static ExcelSheetProtectionDef ParseProtection(JsonElement e, string label)
+    {
+        RequireObject(e, label);
+        return new ExcelSheetProtectionDef
+        {
+            Password = NativeCommon.OptString(e, "password"),
+            AllowSelectLockedCells = NativeCommon.OptBool(e, "allow_select_locked_cells", true),
+            AllowSelectUnlockedCells = NativeCommon.OptBool(e, "allow_select_unlocked_cells", true),
+            AllowFormatCells = NativeCommon.OptBool(e, "allow_format_cells", false),
+            AllowFormatColumns = NativeCommon.OptBool(e, "allow_format_columns", false),
+            AllowFormatRows = NativeCommon.OptBool(e, "allow_format_rows", false),
+            AllowInsertRows = NativeCommon.OptBool(e, "allow_insert_rows", false),
+            AllowInsertColumns = NativeCommon.OptBool(e, "allow_insert_columns", false),
+            AllowDeleteRows = NativeCommon.OptBool(e, "allow_delete_rows", false),
+            AllowDeleteColumns = NativeCommon.OptBool(e, "allow_delete_columns", false),
+            AllowSort = NativeCommon.OptBool(e, "allow_sort", false),
+            AllowAutoFilter = NativeCommon.OptBool(e, "allow_auto_filter", false),
+        };
+    }
+
+    private static ExcelSortDef ParseSort(JsonElement e, string label)
+    {
+        RequireObject(e, label);
+        // range 与排序列的语义校验统一放到写出阶段（NativeRuntimeException，exit 3），
+        // 与 Python 后端在 excel_writer 中抛 ValueError 的行为一致。
+        var range = NativeCommon.OptString(e, "range");
+        if (string.IsNullOrWhiteSpace(range))
+            range = null;
+        if (Get(e, "keys") is not { } keysElement || keysElement.ValueKind != JsonValueKind.Array)
+            throw new NativeUsageException($"{label}.keys 必须是 JSON 数组");
+        var keys = new List<ExcelSortKeyDef>();
+        var index = 0;
+        foreach (var item in keysElement.EnumerateArray())
+        {
+            RequireObject(item, $"{label}.keys[{index}]");
+            var column = NativeCommon.OptString(item, "column");
+            // 缺字段属于参数错误（exit 2）；空字符串留给写出阶段报语义错误（exit 3），
+            // 与 Python 后端 Pydantic 通过后由 excel_writer 抛 ValueError 的行为一致。
+            if (column is null)
+                throw new NativeUsageException($"{label}.keys[{index}].column 不能为空");
+            keys.Add(new ExcelSortKeyDef
+            {
+                Column = column.Trim(),
+                Ascending = NativeCommon.OptBool(item, "ascending", true),
+            });
+            index++;
+        }
+        if (keys.Count == 0)
+            throw new NativeUsageException($"{label}.keys 至少需要 1 个排序键");
+        return new ExcelSortDef
+        {
+            Range = range?.Trim(),
+            Keys = keys,
+            HasHeader = NativeCommon.OptBool(e, "has_header", true),
+        };
     }
 
     public static ExcelChartDef ParseChart(JsonElement e, string label)

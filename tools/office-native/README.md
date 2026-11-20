@@ -76,11 +76,18 @@ stdout 只输出一个 JSON：`{"ok":true,"tool":"...","data":{...}}`；退出�
 
 ## 已知边界（非核心路径）
 
-- Excel：真实排序、形状/绘图、迷你图/切片器、工作簿保护、加密、Power Query 仍未封装；富文本单元格 replace 按 Python 语义跳过（保留原格式）；`.xls` 只支持转换。
-- Word：段落标记修订、移动修订、书签、邮件合并、比较合并、打印、分栏/页面边框/水印仍未封装；浮动图片/裁剪、自定义样式/主题编辑未开放。
-- PPT：母版/节/放映设置、页眉页脚占位符、音频视频等媒体跨 slide 移动未封装；组合形状不递归，SVG 不支持；SmartArt 需带窗口的 PowerPoint。
+- Excel：形状/绘图、迷你图/切片器、工作簿结构保护、加密、Power Query 仍未封装；富文本单元格 replace 按 Python 语义跳过（保留原格式）；`.xls` 只支持转换。
+- Word：段落标记修订、移动修订、邮件合并、比较合并、打印仍未封装；浮动图片/裁剪、自定义样式/主题编辑未开放；水印只写默认页眉。
+- PPT：母版、自定义放映、音频视频等媒体跨 slide 移动未封装；组合形状不递归，SVG 不支持；SmartArt 需带窗口的 PowerPoint。
 - 活动文档：Excel/PPT 只支持基础追加字段，扩展字段会明确报错并建议改用文件级入口；WPS 个别版本不暴露 `ReadOnly`，由保存失败兜底。
 - 图表内嵌工作簿的 part 路径由 SDK 默认生成（`ppt/slides/charts/embeddings/package.xlsx`），PowerPoint 打开/编辑/另存正常，但与 PowerPoint 原生的 `ppt/embeddings/*.xlsx` 路径不保证字节级一致。
+- PPT 的 `sections`/`show_settings`/`footer_text`/`show_slide_number` 仅 C# 后端支持；Python 回退引擎会明确报错（不静默忽略）。
+
+## 2026-11-20 新增能力
+
+- Excel：`SheetDef.protection` 工作表保护（密码 + 格式/插入/删除/排序/筛选/选中权限）、`SheetDef.sort` 多键真实排序（写 `sortState`，与合并区冲突报错）。
+- Word：`SectionItem.type=bookmark` 书签；`PageSetup.columns`/`column_spacing` 分栏、`page_border`/`page_border_color` 页面边框、`watermark_text`/`watermark_color` 文字水印（默认页眉 VML）。
+- PPT：`PptContent.sections` 节（`p14:sectionLst`）、`show_settings` 放映设置（`presProps.xml` 的 `p:showPr`）、`SlideDef.footer_text`/`show_slide_number` 页脚与页码（`a:fld slidenum`，优先占位符）。
 
 ## 2026-11-20 补齐的边界
 

@@ -87,8 +87,8 @@ python -X utf8 tests/update_expected.py
 - PDF 转换是 dsoffice/LibreOffice 或 Office/WPS 的近似还原，不承诺与打印逐像素一致。
 - 扫描件 OCR 依赖本机 Tesseract；未安装时降级返回文本层并在 `message` 说明。
 - 文件被 Office 占用、损坏 OOXML、加密文档等由底层库报错；CLI 统一转成 JSON 错误，不自动修复源文件。
-- 2026-11-20 已补齐：Excel 日期/时间读取与流式读取、合并区批量写入保护、图表/图片/批注锚点边界、活动 Excel 复用、模板公式与名称清理；Word Header/Footer 样式、嵌套/行级修订、跨 run track-delete、原子写回；PPT 图表内嵌数据工作簿、`a:br`/`a:fld` 文本语义、跨 slide 关系迁移。
-- 仍未封装：Excel 真实排序/形状/迷你图/保护/加密/Power Query；Word 书签/邮件合并/比较合并/打印/分栏/浮动图片；PPT 母版/节/放映设置/媒体跨页移动/视频导出。
+- 2026-11-20 已补齐：Excel 日期/时间读取与流式读取、合并区批量写入保护、图表/图片/批注锚点边界、活动 Excel 复用、模板公式与名称清理、工作表保护与多键真实排序；Word Header/Footer 样式、嵌套/行级修订、跨 run track-delete、原子写回、书签、分栏/页面边框/文字水印；PPT 图表内嵌数据工作簿、`a:br`/`a:fld` 文本语义、跨 slide 关系迁移、节/放映设置/页脚页码。
+- 仍未封装：Excel 形状/迷你图/工作簿结构保护/加密/Power Query；Word 邮件合并/比较合并/打印/浮动图片；PPT 母版/自定义放映/媒体跨页移动/视频导出。
 
 ## 许可
 

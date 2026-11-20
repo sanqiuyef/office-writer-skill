@@ -121,6 +121,27 @@ internal sealed class PptSlideDef
     public string? BgColor { get; init; }
     public double? SlideWidth { get; init; }
     public double? SlideHeight { get; init; }
+    public string? FooterText { get; init; }
+    public bool ShowSlideNumber { get; init; }
+}
+
+/// <summary>幻灯片节（仅创建时写入 p14:sectionLst）。</summary>
+internal sealed class PptSectionDef
+{
+    public string Name { get; init; } = "";
+    public int SlideStart { get; init; }
+}
+
+/// <summary>放映设置（仅创建时写入 ppt/presProps.xml 的 p:showPr）。</summary>
+internal sealed class PptShowSettingsDef
+{
+    public string ShowType { get; init; } = "presenter";
+    public bool Loop { get; init; }
+    public bool ShowAnimation { get; init; } = true;
+    public bool ShowNarration { get; init; } = true;
+    public bool UseTimings { get; init; } = true;
+    public int? RangeStart { get; init; }
+    public int? RangeEnd { get; init; }
 }
 
 internal sealed class PptFrameworkNode
@@ -281,6 +302,72 @@ internal static class PptModels
             BgColor = ColorStr(element, "bg_color"),
             SlideWidth = Dbl(element, "slide_width"),
             SlideHeight = Dbl(element, "slide_height"),
+            FooterText = Str(element, "footer_text"),
+            ShowSlideNumber = Bool(element, "show_slide_number") ?? false,
+        };
+    }
+
+    /// <summary>读取顶层 sections（可缺省）；slide_start 必须是 1 基正整数。</summary>
+    public static List<PptSectionDef> ParseSections(JsonElement p)
+    {
+        if (p.ValueKind != JsonValueKind.Object || !p.TryGetProperty("sections", out var value)
+            || value.ValueKind == JsonValueKind.Null)
+            return [];
+        if (value.ValueKind != JsonValueKind.Array)
+            throw new NativeUsageException("sections 必须是 JSON 数组");
+        var sections = new List<PptSectionDef>();
+        var index = 0;
+        foreach (var element in value.EnumerateArray())
+        {
+            index++;
+            if (element.ValueKind != JsonValueKind.Object)
+                throw new NativeUsageException("sections 的每一项必须是 JSON 对象");
+            var name = Str(element, "name");
+            if (string.IsNullOrWhiteSpace(name))
+                throw new NativeUsageException($"sections[{index - 1}] 缺少 name");
+            var slideStart = Int(element, "slide_start");
+            if (slideStart is null)
+                throw new NativeUsageException($"sections[{index - 1}] 缺少 slide_start");
+            if (slideStart < 1)
+                throw new NativeUsageException(
+                    $"sections[{index - 1}].slide_start 必须 >= 1（1 起），收到 {slideStart}");
+            sections.Add(new PptSectionDef
+            {
+                Name = name!.Trim(),
+                SlideStart = slideStart!.Value,
+            });
+        }
+        return sections;
+    }
+
+    /// <summary>读取顶层 show_settings（可缺省）；未知 show_type 直接报错。</summary>
+    public static PptShowSettingsDef? ParseShowSettings(JsonElement p)
+    {
+        if (p.ValueKind != JsonValueKind.Object
+            || !p.TryGetProperty("show_settings", out var value)
+            || value.ValueKind == JsonValueKind.Null)
+            return null;
+        if (value.ValueKind != JsonValueKind.Object)
+            throw new NativeUsageException("show_settings 必须是 JSON 对象");
+        var showType = Str(value, "show_type") ?? "presenter";
+        if (showType is not ("presenter" or "browse" or "kiosk"))
+            throw new NativeUsageException(
+                $"未知 show_settings.show_type: {showType}（支持 presenter/browse/kiosk）");
+        var rangeStart = Int(value, "range_start");
+        var rangeEnd = Int(value, "range_end");
+        if (rangeStart is < 1)
+            throw new NativeUsageException("show_settings.range_start 必须 >= 1（1 起）");
+        if (rangeEnd is < 1)
+            throw new NativeUsageException("show_settings.range_end 必须 >= 1（1 起）");
+        return new PptShowSettingsDef
+        {
+            ShowType = showType,
+            Loop = Bool(value, "loop") ?? false,
+            ShowAnimation = Bool(value, "show_animation") ?? true,
+            ShowNarration = Bool(value, "show_narration") ?? true,
+            UseTimings = Bool(value, "use_timings") ?? true,
+            RangeStart = rangeStart,
+            RangeEnd = rangeEnd,
         };
     }
 

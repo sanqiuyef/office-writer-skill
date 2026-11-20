@@ -25,14 +25,14 @@
 | 公式计算 | 写入公式、用 dsoffice/Excel/WPS COM 重算并写缓存值 | 已覆盖 | `recalculate_excel_formulas`；openpyxl 本身不计算 |
 | 导出/渲染 | xlsx → PDF、逐页/指定区域 PNG | 已覆盖 | `convert_to_pdf`、`render_document_pages` |
 | 数据透视表 | 创建、改字段、刷新 | 已覆盖 | `excel_manage_pivots`（office-native COM）：create/list/refresh；字段支持行/列/值聚合 |
-| 真实排序 | 按值排序并改变行顺序 | 未覆盖 | `auto_filter` 只是筛选；数据排序用 pandas，版式写入仍用本 skill |
+| 真实排序 | 按表头名/列字母多键排序，稳定排序、空值置后；与合并区冲突时明确报错 | 已覆盖 | `SheetDef.sort`（`range`/`keys`/`has_header`）；写入 `sortState`，仅作用于本次写入的表 |
 | 形状/文本框/绘图 | 插入形状、绘图对象 | 未覆盖 | openpyxl 读取时会丢失 shapes/drawings |
 | 迷你图/切片器/日程表 | sparkline、slicer、timeline | 未覆盖 | openpyxl 读取时移除扩展；xlsxwriter 可写迷你图但只能新建 |
 | 宏/VBA | 保留、编辑、运行 | 部分 | `.xlsm/.xltm` 通过 `keep_vba` 保留；不能编辑或运行宏 |
 | 密码/加密/签名 | 打开密码、加密、数字签名 | 未覆盖 | openpyxl 无解密/签名实现 |
 | 旧格式/其他格式 | .xls / .xlsb / .ods / CSV | 部分 | `.xls` 仅转换/COM；`.xlsb/.ods` 未覆盖，CSV 用 pandas |
 | Power Query/数据模型 | 查询、Power Pivot、关系 | 未覆盖 | 需要 COM（Workbook.Queries/Model）或 C# |
-| 保护 | 工作表/工作簿保护 | 未覆盖 | openpyxl 可写保护，但本 skill 未封装入口 |
+| 保护 | 工作表保护（密码、格式化/插入/删除/排序/筛选/选中权限） | 已覆盖 | `SheetDef.protection`（`SheetProtectionDef`）；不支持工作簿结构保护 |
 | 打印 | 导出 PDF、PrintOut | 已覆盖 | `excel_print`（office-native COM）：pdf/print；print 必须显式 `confirm_print=true` |
 
 ## 活动文档边界

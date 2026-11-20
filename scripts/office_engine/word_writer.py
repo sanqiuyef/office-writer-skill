@@ -1,6 +1,6 @@
 # Vendored from mcp_office_writer/word_writer.py (mcp-office-writer 0.6.0, 2026-11).
 # Upstream path: mcp_office_writer/word_writer.py (repository-relative).
-# Modifications: wrap PAGE/TOC field characters and instruction text in w:r runs (required by Microsoft Word) and mark TOC fields dirty for updating; add hyperlink/field content blocks and core-properties writing.
+# Modifications: wrap PAGE/TOC field characters and instruction text in w:r runs (required by Microsoft Word) and mark TOC fields dirty for updating; add hyperlink/field content blocks and core-properties writing; add bookmark blocks, multi-column layout, page borders and VML text watermarks.
 
 """
 mcp-office-writer - Word (.docx) 写入/编辑逻辑
@@ -58,6 +58,88 @@ PAPER_SIZE_MAP = {
     "A3": (Inches(11.69), Inches(16.54)),
     "B5": (Inches(7.17), Inches(10.16)),
 }
+
+# ── 书签 / 分栏 / 页面边框 / 水印 ────────────────────────────────────
+
+# Word 书签名：字母或下划线开头，仅字母/数字/下划线，1-40 字符
+BOOKMARK_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,39}$")
+
+# w:cols 在 CT_SectPr 中的后继元素（用于按 schema 顺序插入）
+_COLS_SUCCESSORS = (
+    "w:formProt", "w:vAlign", "w:noEndnote", "w:titlePg", "w:textDirection",
+    "w:bidi", "w:rtlGutter", "w:docGrid", "w:printerSettings", "w:sectPrChange",
+)
+
+# w:pgBorders 在 CT_SectPr 中的后继元素
+_PGBORDERS_SUCCESSORS = (
+    "w:lnNumType", "w:pgNumType", "w:cols", "w:formProt", "w:vAlign",
+    "w:noEndnote", "w:titlePg", "w:textDirection", "w:bidi", "w:rtlGutter",
+    "w:docGrid", "w:printerSettings", "w:sectPrChange",
+)
+
+# 页面边框线型 → (w:sz, 单位 1/8 磅)
+_PAGE_BORDER_SIZES = {
+    "single": 4,
+    "double": 6,
+    "dashed": 4,
+    "dotted": 4,
+}
+
+_VML_NS = "urn:schemas-microsoft-com:vml"
+_OFFICE_NS = "urn:schemas-microsoft-com:office:office"
+
+_HEX_COLOR_RE = re.compile(r"^[0-9A-Fa-f]{6}$")
+
+_WATERMARK_SHAPETYPE_XML = (
+    '<v:shapetype id="_x0000_t136" coordsize="21600,21600" o:spt="136" adj="10800"'
+    ' path="m@7,l@8,m@5,21600l@6,21600e">'
+    '<v:formulas>'
+    '<v:f eqn="sum #0 0 10800"/><v:f eqn="prod #0 2 1"/><v:f eqn="sum 21600 0 @1"/>'
+    '<v:f eqn="sum 0 0 @2"/><v:f eqn="sum 21600 0 @3"/><v:f eqn="if @0 @3 0"/>'
+    '<v:f eqn="if @0 21600 @1"/><v:f eqn="if @0 0 @2"/><v:f eqn="if @0 @4 21600"/>'
+    '<v:f eqn="mid @5 @6"/><v:f eqn="mid @8 @5"/><v:f eqn="mid @7 @8"/>'
+    '<v:f eqn="mid @6 @7"/><v:f eqn="sum @6 0 @5"/>'
+    '</v:formulas>'
+    '<v:path textpathok="t" o:connecttype="custom"'
+    ' o:connectlocs="@9,0;@10,10800;@11,21600;@12,10800"'
+    ' o:connectangles="270,180,90,0"/>'
+    '<v:textpath on="t" fitshape="t"/>'
+    '<v:handles><v:h position="#0,bottomRight" xrange="6629,14971"/></v:handles>'
+    '<o:lock v:ext="edit" text="t" shapetype="t"/>'
+    '</v:shapetype>'
+)
+
+
+def _normalise_hex_color(value: str, label: str) -> str:
+    """校验 6 位 HEX 颜色（允许 # 前缀），返回大写、无前缀的形式。"""
+    text = (value or "").strip()
+    if text.startswith("#"):
+        text = text[1:]
+    if not _HEX_COLOR_RE.match(text):
+        raise ValueError(f"{label} 必须是 6 位十六进制颜色（如 D9D9D9）: {value!r}")
+    return text.upper()
+
+
+def validate_bookmark_name(name: str | None) -> str:
+    """校验书签名；不合法时抛出 ValueError。"""
+    text = (name or "").strip()
+    if not BOOKMARK_NAME_RE.match(text):
+        raise ValueError(
+            "书签名不合法：必须以字母或下划线开头，仅含字母、数字、下划线，"
+            f"长度 1-40 字符: {name!r}"
+        )
+    return text
+
+
+def _next_bookmark_id(doc) -> int:
+    """扫描文档已有 w:bookmarkStart，返回最大 id + 1（id 全局唯一）。"""
+    max_id = -1
+    for element in doc.element.iter(qn("w:bookmarkStart")):
+        try:
+            max_id = max(max_id, int(element.get(qn("w:id"))))
+        except (TypeError, ValueError):
+            continue
+    return max_id + 1
 
 
 def _col_letter_to_index(cell_ref: str) -> int:
@@ -139,6 +221,149 @@ def _set_page_setup(section, page_setup: PageSetup | None):
         section.left_margin = Inches(page_setup.margin_left)
     if page_setup.margin_right is not None:
         section.right_margin = Inches(page_setup.margin_right)
+    _set_section_columns(section, page_setup.columns, page_setup.column_spacing)
+    _set_page_border(
+        section, page_setup.page_border, page_setup.page_border_color
+    )
+
+
+def _set_section_columns(section, columns: int | None, spacing: float | None) -> None:
+    """写入分栏：w:cols w:num / w:space（twips，1 英寸 = 1440）。"""
+    if columns is None and spacing is None:
+        return
+    if columns is not None and not 1 <= columns <= 4:
+        raise ValueError(f"columns 必须在 1-4 之间: {columns}")
+    if spacing is not None and spacing <= 0:
+        raise ValueError(f"column_spacing 必须大于 0（英寸）: {spacing}")
+
+    sect_pr = section._sectPr
+    cols = sect_pr.find(qn("w:cols"))
+    if cols is None:
+        cols = parse_xml(f'<w:cols {nsdecls("w")}/>')
+        sect_pr.insert_element_before(cols, *_COLS_SUCCESSORS)
+    if columns is not None:
+        cols.set(qn("w:num"), str(columns))
+    if spacing is not None:
+        cols.set(qn("w:space"), str(int(round(spacing * 1440))))
+
+
+def _set_page_border(section, style: str | None, color: str | None) -> None:
+    """写入页面边框：sectPr/w:pgBorders，四边同款，space=24。"""
+    if style is None and color is None:
+        return
+    if style is not None and style not in _PAGE_BORDER_SIZES:
+        raise ValueError(
+            f"page_border 必须是 single/double/dashed/dotted 之一: {style!r}"
+        )
+    border_color = _normalise_hex_color(color, "page_border_color") if color else "auto"
+    sect_pr = section._sectPr
+    borders = sect_pr.find(qn("w:pgBorders"))
+    if style is None:
+        # 仅给颜色：沿用已有边框线型，避免生成无 val 的非法边框
+        if borders is None:
+            return
+        for edge in ("w:top", "w:left", "w:bottom", "w:right"):
+            edge_element = borders.find(qn(edge))
+            if edge_element is not None:
+                edge_element.set(qn("w:color"), border_color)
+        return
+    if borders is None:
+        borders = parse_xml(f'<w:pgBorders {nsdecls("w")}/>')
+        sect_pr.insert_element_before(borders, *_PGBORDERS_SUCCESSORS)
+    borders.set(qn("w:offsetFrom"), "page")
+    size = _PAGE_BORDER_SIZES[style]
+    for edge in ("w:top", "w:left", "w:bottom", "w:right"):
+        edge_element = borders.find(qn(edge))
+        if edge_element is None:
+            edge_element = parse_xml(f'<{edge} {nsdecls("w")}/>')
+            borders.append(edge_element)
+        edge_element.set(qn("w:val"), style)
+        edge_element.set(qn("w:sz"), str(size))
+        edge_element.set(qn("w:space"), "24")
+        edge_element.set(qn("w:color"), border_color)
+
+
+def _set_watermark(doc, text: str | None, color: str | None) -> None:
+    """在默认页眉写入 VML 文字水印；已有水印则替换，避免重复。"""
+    if text is None and color is None:
+        return
+    if not (text or "").strip():
+        raise ValueError("watermark_text 不能为空")
+    fill = _normalise_hex_color(color, "watermark_color") if color else "D9D9D9"
+    label = (text or "").strip()
+
+    seen_parts = set()
+    for index, section in enumerate(doc.sections):
+        header = section.header
+        # 后续节默认链接到前一节的页眉，不重复创建部件
+        if header.is_linked_to_previous and index > 0:
+            continue
+        header.is_linked_to_previous = False
+        part = header.part
+        if id(part) in seen_parts:
+            continue
+        seen_parts.add(id(part))
+        _set_section_watermark(header, label, fill)
+
+
+def _set_section_watermark(header, label: str, fill_color: str) -> None:
+    """在单个页眉部件内写入水印（复用首个段落，已有水印先移除）。"""
+    header_element = header._element
+    paragraphs = list(header_element.findall(qn("w:p")))
+    for paragraph in paragraphs:
+        removed = False
+        for run in list(paragraph.findall(qn("w:r"))):
+            if _run_has_watermark(run):
+                paragraph.remove(run)
+                removed = True
+        if removed and len(paragraphs) > 1 and not _paragraph_has_content(paragraph):
+            header_element.remove(paragraph)
+            paragraphs.remove(paragraph)
+
+    # 页眉至少保留一个段落；水印形状是绝对定位，挂在既有段落里不会增加页眉高度
+    target = paragraphs[0] if paragraphs else None
+    if target is None:
+        target = parse_xml(f'<w:p {nsdecls("w")}/>')
+        header_element.append(target)
+    target.append(parse_xml(
+        _watermark_run_xml(label, fill_color, "PowerPlusWaterMarkObject")
+    ))
+
+
+def _paragraph_has_content(paragraph) -> bool:
+    """段落除 w:pPr 之外是否还有内容。"""
+    return any(
+        child.tag != qn("w:pPr") for child in paragraph
+    )
+
+
+def _run_has_watermark(run) -> bool:
+    for shape in run.iter(f"{{{_VML_NS}}}shape"):
+        if "_x0000_t136" in (shape.get("type") or ""):
+            return True
+    return False
+
+
+def _watermark_run_xml(label: str, fill_color: str, shape_id: str) -> str:
+    """构造 VML 水印 run 的 XML（python-docx 未建模 VML，直接拼 XML）。"""
+    return (
+        f'<w:r {nsdecls("w")} xmlns:v="{_VML_NS}" xmlns:o="{_OFFICE_NS}">'
+        f'<w:rPr><w:noProof/></w:rPr>'
+        f'<w:pict>{_WATERMARK_SHAPETYPE_XML}'
+        f'<v:shape id="{shape_id}" o:spid="_x0000_s2049" type="#_x0000_t136"'
+        f' style="position:absolute;margin-left:0;margin-top:0;width:500pt;'
+        f'height:120pt;rotation:-45;z-index:-251658752;'
+        f'mso-position-horizontal:center;'
+        f'mso-position-horizontal-relative:margin;'
+        f'mso-position-vertical:center;'
+        f'mso-position-vertical-relative:margin"'
+        f' o:allowincell="f" fillcolor="#{fill_color}" stroked="f">'
+        f'<v:fill opacity=".5"/>'
+        f'<v:textpath style="font-family:&quot;宋体&quot;;font-size:1in"'
+        f' string="{_escape_attr(label)}"/>'
+        f'</v:shape>'
+        f'</w:pict></w:r>'
+    )
 
 
 def _set_header_footer(doc, hf: HeaderFooter | None):
@@ -364,6 +589,17 @@ def create_word_document(
         if effective_hf:
             _set_header_footer(doc, effective_hf)
 
+        # 文字水印（写入默认页眉；页眉不存在时创建并链接）
+        if effective_page_setup and (
+            effective_page_setup.watermark_text is not None
+            or effective_page_setup.watermark_color is not None
+        ):
+            _set_watermark(
+                doc,
+                effective_page_setup.watermark_text,
+                effective_page_setup.watermark_color,
+            )
+
         # 修复 Heading 样式颜色（去除 python-docx 默认蓝色主题色）
         _fix_heading_style_colors(doc)
 
@@ -513,6 +749,18 @@ def _merge_page_setup(scene_profile, explicit_page_setup):
             merged.margin_left = explicit_page_setup.margin_left
         if explicit_page_setup.margin_right is not None:
             merged.margin_right = explicit_page_setup.margin_right
+        if explicit_page_setup.columns is not None:
+            merged.columns = explicit_page_setup.columns
+        if explicit_page_setup.column_spacing is not None:
+            merged.column_spacing = explicit_page_setup.column_spacing
+        if explicit_page_setup.page_border is not None:
+            merged.page_border = explicit_page_setup.page_border
+        if explicit_page_setup.page_border_color is not None:
+            merged.page_border_color = explicit_page_setup.page_border_color
+        if explicit_page_setup.watermark_text is not None:
+            merged.watermark_text = explicit_page_setup.watermark_text
+        if explicit_page_setup.watermark_color is not None:
+            merged.watermark_color = explicit_page_setup.watermark_color
 
     return merged
 
@@ -762,6 +1010,41 @@ def _add_section_item_scene(doc, item: SectionItem, default_font, scene_data: di
         )
         if item.style:
             _apply_paragraph_format(p, item.style)
+
+    elif t == "bookmark":
+        from .models import BookmarkDef
+        bookmark = item.bookmark or BookmarkDef(name="")
+        name = validate_bookmark_name(bookmark.name)
+        if any(
+            element.get(qn("w:name")) == name
+            for element in doc.element.iter(qn("w:bookmarkStart"))
+        ):
+            raise ValueError(f"书签名已存在: {name!r}")
+        bookmark_id = _next_bookmark_id(doc)
+        p = doc.add_paragraph()
+        if item.text:
+            style = item.style or PS()
+            s_font = style.font_name or (profile.font_name if profile else None) or (
+                default_font.name if default_font else None)
+            s_size = style.font_size or (profile.body_size if profile else None) or (
+                default_font.size if default_font else None)
+            _add_text_runs(p, item.text, s_font, s_size,
+                           style.bold, style.italic, style.color)
+        if item.style:
+            _apply_paragraph_format(p, item.style)
+        # bookmarkStart / bookmarkEnd 必须成对，且 bookmarkStart 需带名称与唯一 id；
+        # 段落属性 w:pPr 必须是首个子元素，因此 start 插在 pPr 之后。
+        start = parse_xml(
+            f'<w:bookmarkStart {nsdecls("w")} w:id="{bookmark_id}" '
+            f'w:name="{_escape_attr(name)}"/>'
+        )
+        end = parse_xml(
+            f'<w:bookmarkEnd {nsdecls("w")} w:id="{bookmark_id}"/>'
+        )
+        p._element.insert(
+            1 if p._element.find(qn("w:pPr")) is not None else 0, start
+        )
+        p._element.append(end)
 
     elif t == "field":
         from .models import FieldDef as FD

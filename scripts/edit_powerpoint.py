@@ -24,6 +24,13 @@ def run(args):
     if native.use_csharp(TOOL):
         return native.run_entry_from_args(TOOL, args, params)
     file_path = common.arg(args, params, "file_path", required=True)
+    if any(
+            isinstance(item, dict) and (item.get("footer_text") or item.get("show_slide_number"))
+            for item in (params.get("append_slides") or [])):
+        raise common.UsageError(
+            "footer_text/show_slide_number 仅 C# 后端支持；"
+            "请去掉 OFFICE_NATIVE_ENGINE=python"
+        )
     append_slides = common.model_list_arg(params, "append_slides", SlideDef)
     result = edit_powerpoint(file_path, append_slides)
     common.ensure_success(result)

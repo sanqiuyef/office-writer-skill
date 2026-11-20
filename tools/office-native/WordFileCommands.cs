@@ -98,6 +98,12 @@ internal static class WordFileCommands
             MarginBottom = explicitSetup?.MarginBottom ?? scene?.MarginBottom,
             MarginLeft = explicitSetup?.MarginLeft ?? scene?.MarginLeft,
             MarginRight = explicitSetup?.MarginRight ?? scene?.MarginRight,
+            Columns = explicitSetup?.Columns,
+            ColumnSpacing = explicitSetup?.ColumnSpacing,
+            PageBorder = explicitSetup?.PageBorder,
+            PageBorderColor = explicitSetup?.PageBorderColor,
+            WatermarkText = explicitSetup?.WatermarkText,
+            WatermarkColor = explicitSetup?.WatermarkColor,
         };
     }
 

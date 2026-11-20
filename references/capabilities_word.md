@@ -25,12 +25,12 @@
 | 转换/验收 | docx → PDF、逐页 PNG、结构检查 | 已覆盖 | `convert_to_pdf`、`render_document_pages`、`validate_word_document` |
 | 修订 | 列出、接受/拒绝、标记插入与删除；支持嵌套 `ins/del`、表格行级修订、跨 run/多 `w:t` 的删除 | 已覆盖 | `word_manage_revisions`（office-native Open XML SDK）；段落标记修订、移动修订未处理 |
 | 脚注 | 插入、读取、编号 | 已覆盖 | `word_manage_footnotes`（office-native）；尾注未封装 |
-| 书签 | 插入书签、按书签定位 | 未覆盖 | 需要原始 OOXML 或 COM |
+| 书签 | 插入书签（包裹文字或空书签） | 已覆盖 | `SectionItem.type=bookmark` + `BookmarkDef`；书签名/重名/`id` 校验 |
 | 内容控件 | 文本/日期/下拉/复选框的增删改查 | 已覆盖 | `word_manage_content_controls`（office-native）；构建基块未封装 |
 | 邮件合并 | 数据源、域映射、批量生成 | 未覆盖 | 需要 COM（MailMerge） |
 | 文档比较/合并 | CompareDocuments、MergeDocuments | 未覆盖 | 需要 COM |
 | 打印 | PrintOut、打印到指定打印机 | 未覆盖 | 需要 COM；渲染/PDF 可作替代 |
-| 分栏/页面边框/水印 | 多栏、页面边框、水印 | 未覆盖 | 需要原始 OOXML 或页眉 Shape 模拟（水印） |
+| 分栏/页面边框/水印 | 多栏（1-4）、页面边框（单/双/虚线/点线）、文字水印 | 已覆盖 | `PageSetup.columns`/`column_spacing`/`page_border`/`page_border_color`/`watermark_text`/`watermark_color`；仅默认页眉水印 |
 | 图表/SmartArt/OLE/公式 | 创建与编辑 | 未覆盖 | 需要 COM 或 Open XML SDK；打开/保存可保留已有对象 |
 | 旧格式 | .doc / .dotm / .docm | 不支持 | 文件级读写仅 .docx（模板也按 .docx 处理） |
 

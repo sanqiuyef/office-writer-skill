@@ -199,5 +199,107 @@ class NativeP2Test(unittest.TestCase):
                 self.assertIn('w:val="nextPage"', body)
 
 
+    @REQUIRES_NATIVE
+    def test_excel_protection_and_sort(self) -> None:
+        from openpyxl import load_workbook
+
+        with tempfile.TemporaryDirectory(prefix="office_native_xlsx_prot_") as tmp:
+            path = Path(tmp) / "protected.xlsx"
+            run_ok("create_excel_workbook.py", [
+                "--output-path", str(path),
+                "--params", json.dumps({
+                    "sheets": [{
+                        "name": "数据",
+                        "headers": ["名称", "数量"],
+                        "data": [["b", 2], ["a", 10], ["c", None], ["d", 5]],
+                        "sort": {"keys": [{"column": "数量", "ascending": False}]},
+                        "auto_filter": True,
+                        "protection": {"password": "secret", "allow_sort": True},
+                    }]
+                }, ensure_ascii=False),
+            ])
+            workbook = load_workbook(path)
+            sheet = workbook.active
+            self.assertEqual(
+                [row[0] for row in sheet.iter_rows(min_row=2, max_row=5, values_only=True)],
+                ["a", "d", "b", "c"],
+            )
+            self.assertTrue(sheet.protection.sheet)
+            self.assertTrue(sheet.protection.password)
+            with zipfile.ZipFile(path) as archive:
+                xml = archive.read("xl/worksheets/sheet1.xml").decode("utf-8")
+                self.assertIn("sheetProtection", xml)
+                self.assertIn("sortState", xml)
+
+    @REQUIRES_NATIVE
+    def test_word_bookmark_columns_border_watermark(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="office_native_word_caps_") as tmp:
+            path = Path(tmp) / "caps.docx"
+            run_ok("create_word_document.py", [
+                "--output-path", str(path),
+                "--params", json.dumps({
+                    "content": {"sections": [
+                        {"type": "heading", "text": "标题", "level": 1},
+                        {"type": "bookmark", "text": "锚点内容",
+                         "bookmark": {"name": "mark1"}},
+                        {"type": "paragraph", "text": "正文"},
+                    ]},
+                    "page_setup": {
+                        "columns": 2,
+                        "column_spacing": 0.3,
+                        "page_border": "double",
+                        "page_border_color": "C00000",
+                        "watermark_text": "内部资料",
+                    },
+                }, ensure_ascii=False),
+            ])
+            with zipfile.ZipFile(path) as archive:
+                body = archive.read("word/document.xml").decode("utf-8")
+                self.assertIn("bookmarkStart", body)
+                self.assertIn("mark1", body)
+                self.assertIn('w:num="2"', body)
+                self.assertIn("pgBorders", body)
+                headers = [n for n in archive.namelist() if n.startswith("word/header")]
+                self.assertTrue(headers)
+                self.assertIn("_x0000_t136", archive.read(headers[0]).decode("utf-8"))
+
+    @REQUIRES_NATIVE
+    def test_ppt_sections_show_settings_footer(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="office_native_ppt_caps_") as tmp:
+            path = Path(tmp) / "caps.pptx"
+            run_ok("create_powerpoint.py", [
+                "--output-path", str(path),
+                "--params", json.dumps({
+                    "slides": [
+                        {"layout": "title", "title": "开场",
+                         "footer_text": "内部资料", "show_slide_number": True},
+                        {"layout": "content", "title": "一",
+                         "body": [{"type": "paragraph", "text": "A"}]},
+                        {"layout": "content", "title": "二",
+                         "body": [{"type": "paragraph", "text": "B"}]},
+                    ],
+                    "sections": [
+                        {"name": "开场", "slide_start": 1},
+                        {"name": "主体", "slide_start": 2},
+                    ],
+                    "show_settings": {
+                        "show_type": "kiosk", "loop": True,
+                        "range_start": 1, "range_end": 3,
+                    },
+                }, ensure_ascii=False),
+            ])
+            with zipfile.ZipFile(path) as archive:
+                presentation = archive.read("ppt/presentation.xml").decode("utf-8")
+                props = archive.read("ppt/presProps.xml").decode("utf-8")
+                slide1 = archive.read("ppt/slides/slide1.xml").decode("utf-8")
+                self.assertIn("sectionLst", presentation)
+                self.assertIn("主体", presentation)
+                self.assertIn("showPr", props)
+                self.assertIn("kiosk", props)
+                self.assertIn('loop="1"', props)
+                self.assertIn("内部资料", slide1)
+                self.assertIn("slidenum", slide1)
+
+
 if __name__ == "__main__":
     unittest.main()

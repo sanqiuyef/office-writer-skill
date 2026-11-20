@@ -29,8 +29,8 @@
 | 批注 | 幻灯片批注 | 已覆盖 | `ppt_manage_effects`：comments-add/list/delete；现代批注作者由 Office 登录身份决定 |
 | SmartArt | 创建、列布局、写节点 | 已覆盖 | `ppt_manage_smartart`（office-native COM）：layouts/add；需带窗口打开演示文稿 |
 | 母版 | 新增/编辑母版、主题定义 | 未覆盖 | python-pptx 只能改现有 master/layout 形状；新增母版需 XML/COM |
-| 页眉页脚/页码 | 日期、页脚、幻灯片编号 | 未覆盖 | python-pptx 不克隆日期/页脚/页码占位符；需 XML 或 COM |
-| 节/放映设置 | 节分组、放映方式、命名放映 | 未覆盖 | COM（`SectionProperties`、`SlideShowSettings`）或 C# |
+| 页眉页脚/页码 | 页脚文字、幻灯片编号（优先占位符，否则底部文本框 + `a:fld slidenum`） | 已覆盖 | `SlideDef.footer_text`、`show_slide_number` |
+| 节/放映设置 | 节分组（`p14:sectionLst`）、放映方式/循环/动画/旁白/计时/页码范围 | 已覆盖 | `PptContent.sections`、`show_settings`（仅创建时）；自定义放映未封装 |
 | 媒体/OLE | 音频、视频、嵌入对象 | 未覆盖 | python-pptx 仅实验性 `add_movie`；OLE 只能嵌入 |
 | 导出 | PDF、逐页 PNG；单页图片、视频 | 部分 | `convert_to_pdf`、`render_document_pages`；单页图片/视频需 COM（`Slide.Export`、`CreateVideo`） |
 | 旧格式 | .ppt / .ppsx | 部分 | `.ppt` 仅转换/COM；文件级编辑只支持 .pptx/.potx |

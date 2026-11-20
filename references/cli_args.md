@@ -33,9 +33,9 @@
 
 `batch_edit_office_document` 省略 `--output-path` 时默认先在同目录写 `*.bak-YYYYmmdd-HHMMSS`，结果带 `backup_path`；`--no-backup` 关闭备份。
 
-`SectionItem.type`：`heading` / `paragraph` / `table` / `image` / `page_break` / `bullet_list` / `numbered_list` / `code` / `toc` / `section_break` / `hyperlink` / `field`。`hyperlink` 用 `{"text","url","tooltip"}`；`field` 用 `{"field_type":"PAGE|NUMPAGES|SECTIONPAGES|DATE|TIME|FILENAME|AUTHOR|TITLE|CUSTOM","code","fallback_text","number_format"}`，CUSTOM 时 `code` 必填。
+`SectionItem.type`：`heading` / `paragraph` / `table` / `image` / `page_break` / `bullet_list` / `numbered_list` / `code` / `toc` / `section_break` / `hyperlink` / `field` / `bookmark`。`hyperlink` 用 `{"text","url","tooltip"}`；`field` 用 `{"field_type":"PAGE|NUMPAGES|SECTIONPAGES|DATE|TIME|FILENAME|AUTHOR|TITLE|CUSTOM","code","fallback_text","number_format"}`，CUSTOM 时 `code` 必填；`bookmark` 用 `{"name"}`，`text` 为书签内容。
 
-`WordContent.properties` 可在创建时写核心属性。`SheetDef` 的扩展字段：`row_heights`、`sheet_state`、`charts`、`conditional_formats`、`data_validations`、`tables`、`defined_names`、`hyperlinks`、`comments`、`images`、`page_setup`；PPT 的 `SlideTableDef`/`ChartDef` 支持 `x/y/width/height`，`SlideImageDef` 支持 `crop_left/right/top/bottom` 与 `hyperlink_url`，`SlideShapeDef` 支持 `hyperlink_url`。
+`WordContent.properties` 可在创建时写核心属性；`PageSetup` 另支持 `columns`（1-4）、`column_spacing`、`page_border`（single/double/dashed/dotted）、`page_border_color`、`watermark_text`、`watermark_color`。`SheetDef` 的扩展字段：`row_heights`、`sheet_state`、`charts`、`conditional_formats`、`data_validations`、`tables`、`defined_names`、`hyperlinks`、`comments`、`images`、`page_setup`、`protection`、`sort`。PPT 的 `SlideTableDef`/`ChartDef` 支持 `x/y/width/height`，`SlideImageDef` 支持 `crop_left/right/top/bottom` 与 `hyperlink_url`，`SlideShapeDef` 支持 `hyperlink_url`；`SlideDef` 支持 `footer_text`/`show_slide_number`，`PptContent` 支持 `sections`/`show_settings`（仅创建）。
 
 `OfficeOperation`：`{"op":"set|add|remove|move|replace","path":"/body/p[1]","element_type":"paragraph","props":{...},"target_path":"...","position":"before|after"}`。
 

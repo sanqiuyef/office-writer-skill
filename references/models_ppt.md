@@ -31,7 +31,7 @@ PPT 幻灯片表格定义
 | `width` | `float \| None` |  | 表格宽度 (英寸)，默认 7.0 |
 | `height` | `float \| None` |  | 表格高度 (英寸)，默认 2.5 |
 | `column_widths` | `list[float] \| None` |  | 各列宽度 (英寸)，总宽超出表格宽度时按比例缩放 |
-| `header_bold` | `bool` | True | 表头是否加粗 |
+| `header_bold` | `bool` | true | 表头是否加粗 |
 
 ## `SlideImageDef`
 
@@ -67,12 +67,12 @@ PPT 形状定义
 | `bg_color` | `str \| None` |  | 填充颜色 HEX，None 且 no_fill=False 时保持默认 |
 | `font_color` | `str \| None` |  | 文字颜色 HEX |
 | `font_size` | `int \| None` |  | 字号 (pt)，默认 12 |
-| `bold` | `bool \| None` | False |  |
-| `no_fill` | `bool` | False | 无填充（透明），用于虚线分组框等 |
+| `bold` | `bool \| None` | false |  |
+| `no_fill` | `bool` | false | 无填充（透明），用于虚线分组框等 |
 | `line_color` | `str \| None` |  | 边框颜色 HEX，None 不设置边框 |
 | `line_width` | `float \| None` |  | 边框宽度 (pt) |
-| `line_dash` | `bool` | False | 边框是否虚线 |
-| `vertical_text` | `bool` | False | 文字竖排（圆柱体阶段标记用） |
+| `line_dash` | `bool` | false | 边框是否虚线 |
+| `vertical_text` | `bool` | false | 文字竖排（圆柱体阶段标记用） |
 
 ## `SlideConnectorDef`
 
@@ -86,10 +86,10 @@ PPT 连接线/箭头定义（坐标单位：英寸，相对幻灯片左上角）
 | `y2` | `float` | 必填 | 终点 Y (英寸) |
 | `color` | `str \| None` |  | 线条颜色 HEX，留空用默认 |
 | `width` | `float` | 1.5 | 线宽 (pt) |
-| `dash` | `bool` | False | 是否虚线（损失反向传播等特殊箭头） |
-| `arrowhead` | `bool` | True | 终点是否带箭头 |
+| `dash` | `bool` | false | 是否虚线（损失反向传播等特殊箭头） |
+| `arrowhead` | `bool` | true | 终点是否带箭头 |
 | `arrowhead_style` | `Literal['triangle', 'open', 'stealth']` | 'triangle' | 箭头样式 |
-| `begin_arrowhead` | `bool` | False | 起点是否带箭头 |
+| `begin_arrowhead` | `bool` | false | 起点是否带箭头 |
 
 ## `SlideItem`
 
@@ -117,7 +117,7 @@ PPT 图表定义
 | `chart_type` | `Literal['column', 'bar', 'line', 'pie', 'doughnut', 'area', 'radar']` | 'column' | 图表类型 |
 | `categories` | `list[str]` | 必填 | 类别标签（X 轴） |
 | `series` | `ForwardRef('list[ChartSeries]')` | 必填 | 数据系列 |
-| `has_legend` | `bool` | True | 是否显示图例 |
+| `has_legend` | `bool` | true | 是否显示图例 |
 | `title` | `str \| None` |  | 图表标题 |
 | `x` | `float \| None` |  | 左侧位置 (英寸)，默认 0.5 |
 | `y` | `float \| None` |  | 顶部位置 (英寸)，默认 1.5 |
@@ -132,6 +132,29 @@ PPT 图表定义
 |:---|:---|:---|:---|
 | `name` | `str` | 必填 | 系列名称 |
 | `values` | `list[float]` | 必填 | 数值列表 |
+
+## `ShowSettingsDef`
+
+放映设置（写入 presentation.xml 的 p:showPr）
+
+| 字段 | 类型 | 默认 | 说明 |
+|:---|:---|:---|:---|
+| `show_type` | `Literal['presenter', 'browse', 'kiosk']` | 'presenter' | 放映方式 |
+| `loop` | `bool` | false | 循环放映 |
+| `show_animation` | `bool` | true | 放映时播放动画 |
+| `show_narration` | `bool` | true | 播放旁白 |
+| `use_timings` | `bool` | true | 使用排练计时 |
+| `range_start` | `int \| None` |  | 从第 N 张开始（1 起） |
+| `range_end` | `int \| None` |  | 到第 N 张结束（1 起） |
+
+## `SectionDef`
+
+幻灯片节
+
+| 字段 | 类型 | 默认 | 说明 |
+|:---|:---|:---|:---|
+| `name` | `str` | 必填 | 节名称 |
+| `slide_start` | `int` | 必填 | 该节从第几张幻灯片开始（1 起） |
 
 ## `SlideDef`
 
@@ -149,6 +172,8 @@ PPT 图表定义
 | `bg_color` | `str \| None` |  | 幻灯片背景色 HEX |
 | `slide_width` | `float \| None` |  | 幻灯片宽度 (英寸)，默认 10 |
 | `slide_height` | `float \| None` |  | 幻灯片高度 (英寸)，默认 7.5 |
+| `footer_text` | `str \| None` |  | 页脚文字（底部居中） |
+| `show_slide_number` | `bool` | false | 显示幻灯片编号（右下角） |
 
 ## `PptContent`
 
@@ -157,6 +182,8 @@ PPT 演示文稿内容
 | 字段 | 类型 | 默认 | 说明 |
 |:---|:---|:---|:---|
 | `slides` | `list[SlideDef]` | 必填 | 幻灯片列表（至少 1 个） |
+| `sections` | `list[SectionDef] \| None` |  | 幻灯片节（仅创建时） |
+| `show_settings` | `ShowSettingsDef \| None` |  | 放映设置（仅创建时） |
 
 ## `FwNode`
 
@@ -169,7 +196,7 @@ PPT 演示文稿内容
 | `style` | `Literal['rect', 'rounded_rect', 'ellipse', 'diamond', 'process', 'decision', 'data', 'document', 'terminator', 'predefined', 'cylinder', 'parallelogram', 'chevron', 'right_arrow', 'left_arrow', 'callout', 'cloud']` | 'rounded_rect' | 节点形状 |
 | `fill_color` | `str \| None` |  | 填充色 HEX，留空使用阶段色 |
 | `font_size` | `int` | 12 | 字号 |
-| `bold` | `bool` | True | 是否加粗 |
+| `bold` | `bool` | true | 是否加粗 |
 
 ## `FwEdge`
 

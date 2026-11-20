@@ -56,6 +56,12 @@
 | `margin_bottom` | `float \| None` |  | 下边距 (英寸) |
 | `margin_left` | `float \| None` |  | 左边距 (英寸) |
 | `margin_right` | `float \| None` |  | 右边距 (英寸) |
+| `columns` | `int \| None` |  | 分栏数（1-4） |
+| `column_spacing` | `float \| None` |  | 分栏间距 (英寸) |
+| `page_border` | `Optional[Literal['single', 'double', 'dashed', 'dotted']]` |  | 页面边框线型 |
+| `page_border_color` | `str \| None` |  | 页面边框颜色 HEX |
+| `watermark_text` | `str \| None` |  | 文字水印内容 |
+| `watermark_color` | `str \| None` |  | 水印颜色 HEX，默认浅灰 |
 
 ## `HeaderFooter`
 
@@ -89,7 +95,7 @@
 | `margin_left` | `float` | 1.18 |  |
 | `margin_right` | `float` | 1.18 |  |
 | `page_number_style` | `Literal['none', 'roman', 'arabic']` | 'arabic' |  |
-| `show_cover` | `bool` | False |  |
+| `show_cover` | `bool` | false |  |
 
 ## `CoverConfig`
 
@@ -174,13 +180,21 @@ Word 域定义（PAGE/NUMPAGES/DATE 等）
 | `fallback_text` | `str \| None` |  | 域结果占位文字，Word 更新域前显示 |
 | `number_format` | `str \| None` |  | 数字格式开关，如 'roman'、'DBNUM1'；用于 PAGE/NUMPAGES |
 
+## `BookmarkDef`
+
+Word 书签（包裹 text 内容）
+
+| 字段 | 类型 | 默认 | 说明 |
+|:---|:---|:---|:---|
+| `name` | `str` | 必填 | 书签名，字母/数字/下划线，不超过 40 字符 |
+
 ## `SectionItem`
 
 Word 文档的一个内容块
 
 | 字段 | 类型 | 默认 | 说明 |
 |:---|:---|:---|:---|
-| `type` | `Literal['heading', 'paragraph', 'table', 'image', 'page_break', 'bullet_list', 'numbered_list', 'code', 'toc', 'section_break', 'hyperlink', 'field']` | 必填 |  |
+| `type` | `Literal['heading', 'paragraph', 'table', 'image', 'page_break', 'bullet_list', 'numbered_list', 'code', 'toc', 'section_break', 'hyperlink', 'field', 'bookmark']` | 必填 |  |
 | `text` | `str \| None` |  | 文字内容 |
 | `level` | `int \| None` |  | 标题层级 (1-9)，仅 heading 类型使用 |
 | `language` | `str \| None` |  | 代码语言标签，仅 code 类型使用 |
@@ -191,6 +205,7 @@ Word 文档的一个内容块
 | `toc_levels` | `str \| None` |  | TOC 包含的标题层级，如 '1-3'，仅 toc 类型使用 |
 | `hyperlink` | `HyperlinkDef \| None` |  | 超链接定义，仅 hyperlink 类型使用 |
 | `field` | `FieldDef \| None` |  | 域定义，仅 field 类型使用 |
+| `bookmark` | `BookmarkDef \| None` |  | 书签定义，仅 bookmark 类型使用 |
 
 ## `WordProperties`
 

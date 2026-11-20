@@ -29,6 +29,16 @@ internal static class ExcelFileCommands
         {
             NativeCommon.ReleaseCom((object?)workbook);
             NativeCommon.ReleaseCom((object?)active);
+            // 活动文档 COM 追加路径没有实现工作表保护/排序；显式失败，不静默丢弃。
+            foreach (var sheet in appendSheets)
+            {
+                if (sheet.Protection is not null || sheet.Sort is not null)
+                {
+                    throw new NativeRuntimeException(
+                        $"工作表 '{sheet.Name}' 使用了 protection/sort 字段，活动 Excel 追加暂不支持；"
+                        + "请关闭文件后使用文件级 edit_excel_workbook");
+                }
+            }
             return OpenEditExcelCommands.RunEditOpenExcelWorkbook(p);
         }
         return ExcelFileOoxml.EditWorkbook(filePath, appendSheets);

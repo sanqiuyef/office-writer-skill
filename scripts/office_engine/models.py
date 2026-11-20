@@ -72,6 +72,13 @@ class PageSetup(BaseModel):
     margin_bottom: float | None = Field(None, description="下边距 (英寸)")
     margin_left: float | None = Field(None, description="左边距 (英寸)")
     margin_right: float | None = Field(None, description="右边距 (英寸)")
+    columns: int | None = Field(None, ge=1, le=4, description="分栏数（1-4）")
+    column_spacing: float | None = Field(None, description="分栏间距 (英寸)")
+    page_border: Literal["single", "double", "dashed", "dotted"] | None = Field(
+        None, description="页面边框线型")
+    page_border_color: str | None = Field(None, description="页面边框颜色 HEX")
+    watermark_text: str | None = Field(None, description="文字水印内容")
+    watermark_color: str | None = Field(None, description="水印颜色 HEX，默认浅灰")
 
 
 class HeaderFooter(BaseModel):
@@ -186,9 +193,14 @@ class FieldDef(BaseModel):
         return self
 
 
+class BookmarkDef(BaseModel):
+    """Word 书签（包裹 text 内容）"""
+    name: str = Field(..., description="书签名，字母/数字/下划线，不超过 40 字符")
+
+
 class SectionItem(BaseModel):
     """Word 文档的一个内容块"""
-    type: Literal["heading", "paragraph", "table", "image", "page_break", "bullet_list", "numbered_list", "code", "toc", "section_break", "hyperlink", "field"]
+    type: Literal["heading", "paragraph", "table", "image", "page_break", "bullet_list", "numbered_list", "code", "toc", "section_break", "hyperlink", "field", "bookmark"]
     text: str | None = Field(None, description="文字内容")
     level: int | None = Field(None, description="标题层级 (1-9)，仅 heading 类型使用")
     language: str | None = Field(None, description="代码语言标签，仅 code 类型使用")
@@ -199,6 +211,7 @@ class SectionItem(BaseModel):
     toc_levels: str | None = Field(None, description="TOC 包含的标题层级，如 '1-3'，仅 toc 类型使用")
     hyperlink: HyperlinkDef | None = Field(None, description="超链接定义，仅 hyperlink 类型使用")
     field: FieldDef | None = Field(None, description="域定义，仅 field 类型使用")
+    bookmark: BookmarkDef | None = Field(None, description="书签定义，仅 bookmark 类型使用")
 
     @model_validator(mode="after")
     def _check_payload(self):
@@ -206,6 +219,8 @@ class SectionItem(BaseModel):
             raise ValueError("type=hyperlink 时必须提供 hyperlink 定义")
         if self.type == "field" and self.field is None:
             raise ValueError("type=field 时必须提供 field 定义")
+        if self.type == "bookmark" and self.bookmark is None:
+            raise ValueError("type=bookmark 时必须提供 bookmark 定义")
         return self
 
 
@@ -390,6 +405,35 @@ class ExcelPageSetupDef(BaseModel):
     center_vertically: bool | None = None
 
 
+class SheetProtectionDef(BaseModel):
+    """工作表保护（allow_* 为 True 表示允许该操作）"""
+    password: str | None = Field(None, description="保护密码（明文，写入 OOXML hash）")
+    allow_select_locked_cells: bool = Field(True, description="允许选中锁定单元格")
+    allow_select_unlocked_cells: bool = Field(True, description="允许选中未锁定单元格")
+    allow_format_cells: bool = False
+    allow_format_columns: bool = False
+    allow_format_rows: bool = False
+    allow_insert_rows: bool = False
+    allow_insert_columns: bool = False
+    allow_delete_rows: bool = False
+    allow_delete_columns: bool = False
+    allow_sort: bool = False
+    allow_auto_filter: bool = False
+
+
+class SortKeyDef(BaseModel):
+    """排序键：column 为表头名；has_header=false 时可用列字母，如 'B'"""
+    column: str = Field(..., description="表头名或列字母")
+    ascending: bool = Field(True, description="是否升序")
+
+
+class ExcelSortDef(BaseModel):
+    """按行排序（写数据后重排行，并写 sortState）"""
+    range: str | None = Field(None, description="排序区域，如 'A1:D20'；默认整个已用区域")
+    keys: list[SortKeyDef] = Field(..., min_length=1, description="排序键，按顺序比较")
+    has_header: bool = Field(True, description="首行是否为表头")
+
+
 class SheetDef(BaseModel):
     """Excel 工作表定义"""
     name: str = Field(..., description="工作表名称")
@@ -414,6 +458,8 @@ class SheetDef(BaseModel):
     comments: list[ExcelCommentDef] | None = Field(None, description="单元格批注")
     images: list[ExcelImageDef] | None = Field(None, description="插入图片")
     page_setup: ExcelPageSetupDef | None = Field(None, description="打印与页面设置")
+    protection: SheetProtectionDef | None = Field(None, description="工作表保护")
+    sort: ExcelSortDef | None = Field(None, description="写数据后按行排序")
 
 
 class ExcelContent(BaseModel):
@@ -543,6 +589,23 @@ class ChartSeries(BaseModel):
     values: list[float] = Field(..., description="数值列表")
 
 
+class ShowSettingsDef(BaseModel):
+    """放映设置（写入 presentation.xml 的 p:showPr）"""
+    show_type: Literal["presenter", "browse", "kiosk"] = Field("presenter", description="放映方式")
+    loop: bool = Field(False, description="循环放映")
+    show_animation: bool = Field(True, description="放映时播放动画")
+    show_narration: bool = Field(True, description="播放旁白")
+    use_timings: bool = Field(True, description="使用排练计时")
+    range_start: int | None = Field(None, ge=1, description="从第 N 张开始（1 起）")
+    range_end: int | None = Field(None, ge=1, description="到第 N 张结束（1 起）")
+
+
+class SectionDef(BaseModel):
+    """幻灯片节"""
+    name: str = Field(..., description="节名称")
+    slide_start: int = Field(..., ge=1, description="该节从第几张幻灯片开始（1 起）")
+
+
 class SlideDef(BaseModel):
     """幻灯片定义"""
     layout: LayoutType = "content"
@@ -555,11 +618,15 @@ class SlideDef(BaseModel):
     bg_color: str | None = Field(None, description="幻灯片背景色 HEX")
     slide_width: float | None = Field(None, description="幻灯片宽度 (英寸)，默认 10")
     slide_height: float | None = Field(None, description="幻灯片高度 (英寸)，默认 7.5")
+    footer_text: str | None = Field(None, description="页脚文字（底部居中）")
+    show_slide_number: bool = Field(False, description="显示幻灯片编号（右下角）")
 
 
 class PptContent(BaseModel):
     """PPT 演示文稿内容"""
     slides: list[SlideDef] = Field(..., description="幻灯片列表（至少 1 个）")
+    sections: list[SectionDef] | None = Field(None, description="幻灯片节（仅创建时）")
+    show_settings: ShowSettingsDef | None = Field(None, description="放映设置（仅创建时）")
 
 
 # ── 框架图 ────────────────────────────────────────────────────────

@@ -1285,6 +1285,8 @@ internal sealed class ExcelSheetWriter
     private readonly string _name;
     private readonly WorksheetPart _part;
     private readonly ExcelStyleBook _styles;
+    private ExcelSortPlan? _sortPlan;
+    private List<List<JsonElement>> _dataRows = [];
 
     public ExcelSheetWriter(
         ExcelWorkbookContext context, ExcelSheetDef definition, string name, WorksheetPart part)
@@ -1299,6 +1301,9 @@ internal sealed class ExcelSheetWriter
     public void Write()
     {
         ValidateGeometry();
+        // 排序在写行之前完成：计划失败时整张表都不写入，避免留下半成品。
+        _sortPlan = ExcelSortPlanner.Prepare(_def);
+        _dataRows = _sortPlan is null ? _def.Data : _sortPlan.Rows;
         var worksheet = _part.Worksheet ??= new Worksheet();
         worksheet.RemoveAllChildren();
 
@@ -1351,10 +1356,10 @@ internal sealed class ExcelSheetWriter
         }
 
         var startRow = _def.Headers is { Count: > 0 } ? 2 : 1;
-        for (var rowOffset = 0; rowOffset < _def.Data.Count; rowOffset++)
+        for (var rowOffset = 0; rowOffset < _dataRows.Count; rowOffset++)
         {
             var rowIndex = startRow + rowOffset;
-            var rowData = _def.Data[rowOffset];
+            var rowData = _dataRows[rowOffset];
             for (var columnOffset = 0; columnOffset < rowData.Count; columnOffset++)
             {
                 var column = columnOffset + 1;
@@ -1440,6 +1445,9 @@ internal sealed class ExcelSheetWriter
         if (columns is not null)
             worksheet.Append(columns);
         worksheet.Append(sheetData);
+        // CT_Worksheet 顺序：sheetProtection 位于 sheetData 之后、autoFilter/mergeCells 之前。
+        if (_def.Protection is { } protection)
+            worksheet.Append(ExcelSheetProtectionBuilder.Build(protection));
         if (BuildAutoFilter() is { } autoFilter)
             worksheet.Append(autoFilter);
         if (mergedCells is not null)
@@ -1648,9 +1656,9 @@ internal sealed class ExcelSheetWriter
 
     private AutoFilter? BuildAutoFilter()
     {
-        if (!_def.AutoFilter || _def.Headers is not { Count: > 0 } || _def.Data.Count == 0)
+        if (!_def.AutoFilter || _def.Headers is not { Count: > 0 } || _dataRows.Count == 0)
             return null;
-        var lastRow = _def.Data.Count + 1;
+        var lastRow = _dataRows.Count + 1;
         var lastColumn = _def.Headers.Count;
         // Excel 不允许工作表级自动筛选与超级表重叠；表自身已带筛选按钮。
         if (_def.Tables is not null)
@@ -1664,10 +1672,14 @@ internal sealed class ExcelSheetWriter
                     return null;
             }
         }
-        return new AutoFilter
+        var autoFilter = new AutoFilter
         {
             Reference = $"A1:{ExcelA1.ColumnName(lastColumn)}{lastRow}",
         };
+        // 排序只写进 autoFilter 的 sortState，不额外造 autoFilter 元素。
+        if (_sortPlan is not null)
+            autoFilter.Append(ExcelSortPlanner.BuildSortState(_sortPlan, _def, autoFilter.Reference!));
+        return autoFilter;
     }
 
     private SheetDimension BuildDimension(Dictionary<string, Cell> cells)
@@ -2257,4 +2269,330 @@ internal sealed class ExcelSheetWriter
         "B5" => 13,
         _ => 9,
     };
+}
+
+// ── 工作表保护 ───────────────────────────────────────────────────
+
+internal static class ExcelSheetProtectionBuilder
+{
+    /// <summary>构造 &lt;sheetProtection&gt;：allow_* 为 true 时写 "0"（允许），否则 "1"。</summary>
+    public static SheetProtection Build(ExcelSheetProtectionDef protection)
+    {
+        var element = new SheetProtection
+        {
+            Sheet = true,
+            // objects/scenarios/pivotTables 模型未暴露，取值与 openpyxl 默认保持一致。
+            Objects = false,
+            Scenarios = false,
+            PivotTables = true,
+            FormatCells = !protection.AllowFormatCells,
+            FormatColumns = !protection.AllowFormatColumns,
+            FormatRows = !protection.AllowFormatRows,
+            InsertRows = !protection.AllowInsertRows,
+            InsertColumns = !protection.AllowInsertColumns,
+            // 模型没有 allow_insert_hyperlinks，保持 openpyxl 默认（禁止插入超链接）。
+            InsertHyperlinks = true,
+            DeleteRows = !protection.AllowDeleteRows,
+            DeleteColumns = !protection.AllowDeleteColumns,
+            Sort = !protection.AllowSort,
+            AutoFilter = !protection.AllowAutoFilter,
+            SelectLockedCells = !protection.AllowSelectLockedCells,
+            SelectUnlockedCells = !protection.AllowSelectUnlockedCells,
+        };
+        // 空密码不写 password 属性（openpyxl 同样省略），否则会额外写出 password=""。
+        if (!string.IsNullOrEmpty(protection.Password))
+            element.Password = ExcelLegacyPassword.Hash(protection.Password);
+        return element;
+    }
+}
+
+// ── OOXML legacy 密码 hash ───────────────────────────────────────
+
+internal static class ExcelLegacyPassword
+{
+    /// <summary>
+    /// OOXML 工作表保护的 legacy hash，逐位对齐
+    /// openpyxl.utils.protection.hash_password（Python 后端就用它），
+    /// 保证同一密码在 Python 与 C# 两个后端写出相同的 password 属性值。
+    /// 按 Unicode 码点迭代（等价 Python 的字符串迭代），非 BMP 字符计 1 个长度。
+    /// </summary>
+    public static string Hash(string password)
+    {
+        long hash = 0;
+        var length = 0;
+        foreach (var rune in password.EnumerateRunes())
+        {
+            length++;
+            long value = (long)rune.Value << length;
+            var rotated = value >> 15;
+            value &= 0x7FFF;
+            hash ^= value | rotated;
+        }
+        hash ^= length;
+        hash ^= 0xCE4B;
+        return hash.ToString("X", CultureInfo.InvariantCulture);
+    }
+}
+
+// ── 按行排序 ─────────────────────────────────────────────────────
+
+internal sealed class ExcelSortPlan
+{
+    public List<List<JsonElement>> Rows { get; init; } = [];
+    public List<int> Columns { get; init; } = [];
+    public List<bool> Descending { get; init; } = [];
+    /// <summary>sort.range 显式给出时的归一化区域；默认排序时为 null。</summary>
+    public string? Range { get; init; }
+}
+
+internal static class ExcelSortPlanner
+{
+    private const int MaxColumns = ExcelFileOoxml.MaxColumns;
+    // 排序值类别：数字 < 字符串 < 空（空白永远排最后）
+    private const int RankNumber = 0;
+    private const int RankString = 1;
+    private const int RankEmpty = 2;
+
+    public static ExcelSortPlan? Prepare(ExcelSheetDef sheet)
+    {
+        if (sheet.Sort is not { } sort)
+            return null;
+        if (sheet.MergedCells is { Count: > 0 })
+        {
+            throw new NativeRuntimeException(
+                "工作表同时配置了 merged_cells 与 sort：排序会移动合并区域并破坏合并，"
+                + "请去掉 merged_cells 或改为写入已排好序的数据");
+        }
+        if (sort.HasHeader && sheet.Headers is not { Count: > 0 })
+        {
+            throw new NativeRuntimeException(
+                "排序配置 has_header=true，但工作表未提供 headers，无法按表头名定位排序列");
+        }
+
+        var columnsWritten = WrittenColumns(sheet);
+        if (columnsWritten == 0)
+            throw new NativeRuntimeException("排序配置了 sort，但工作表没有任何表头或数据列");
+        var columns = sort.Keys
+            .Select(key => ResolveColumn(sheet, key.Column, columnsWritten, sort.HasHeader))
+            .ToList();
+        var descending = sort.Keys.Select(key => !key.Ascending).ToList();
+
+        ExcelRange? bounds = null;
+        if (!string.IsNullOrWhiteSpace(sort.Range))
+        {
+            if (!ExcelA1.TryParseRange(sort.Range, out var parsed))
+            {
+                throw new NativeRuntimeException(
+                    $"无效的排序区域: {sort.Range}（必须是含具体行列的 A1 范围，如 A1:C10）");
+            }
+            bounds = parsed;
+            for (var index = 0; index < sort.Keys.Count; index++)
+            {
+                if (columns[index] < parsed.MinCol || columns[index] > parsed.MaxCol)
+                {
+                    throw new NativeRuntimeException(
+                        $"排序键 {sort.Keys[index].Column}（第 {columns[index]} 列）"
+                        + $"不在排序区域 {sort.Range} 的列范围内");
+                }
+            }
+        }
+
+        var dataStartRow = sheet.Headers is { Count: > 0 } ? 2 : 1;
+        var selected = new List<int>();
+        for (var index = 0; index < sheet.Data.Count; index++)
+        {
+            if (bounds is { } range)
+            {
+                var rowIndex = dataStartRow + index;
+                if (rowIndex < range.MinRow || rowIndex > range.MaxRow)
+                    continue;
+            }
+            selected.Add(index);
+        }
+        if (selected.Count == 0)
+        {
+            throw new NativeRuntimeException(bounds is null
+                ? "排序配置了 sort，但没有可排序的数据行"
+                : $"排序区域 {sort.Range} 未覆盖任何数据行（数据从第 {dataStartRow} 行开始）");
+        }
+
+        var rows = new List<List<JsonElement>>(sheet.Data);
+        var keyed = selected
+            .Select(index => (
+                Values: columns.Select(column => Normalize(CellValue(rows[index], column))).ToArray(),
+                Index: index))
+            .ToList();
+        var orderedIndices = Enumerable.Range(0, keyed.Count).ToList();
+        orderedIndices.Sort((left, right) =>
+        {
+            var result = CompareRows(keyed[left].Values, keyed[right].Values, descending);
+            return result != 0 ? result : left.CompareTo(right); // 显式保持稳定
+        });
+        var ordered = orderedIndices.Select(position => rows[keyed[position].Index]).ToList();
+        for (var position = 0; position < selected.Count; position++)
+            rows[selected[position]] = ordered[position];
+
+        return new ExcelSortPlan
+        {
+            Rows = rows,
+            Columns = columns,
+            Descending = descending,
+            Range = bounds is { } explicitRange
+                ? ExcelA1.FormatRange(
+                    explicitRange.MinCol, explicitRange.MinRow,
+                    explicitRange.MaxCol, explicitRange.MaxRow)
+                : null,
+        };
+    }
+
+    /// <summary>按 sortState 规则在 AutoFilter 内追加 &lt;sortState&gt;/&lt;sortCondition&gt;。</summary>
+    public static SortState BuildSortState(
+        ExcelSortPlan plan, ExcelSheetDef sheet, string filterReference)
+    {
+        // 与 Excel/openpyxl 一致：sortState 区域含表头，sortCondition 只覆盖数据行。
+        var range = plan.Range ?? filterReference;
+        if (!ExcelA1.TryParseRange(range, out var parsed))
+            throw new NativeRuntimeException($"排序区域无效: {range}");
+        var dataStartRow = sheet.Headers is { Count: > 0 } ? 2 : 1;
+        var dataMinRow = parsed.MinRow < dataStartRow && parsed.MaxRow >= dataStartRow
+            ? dataStartRow
+            : parsed.MinRow;
+        var sortState = new SortState { Reference = range };
+        foreach (var (column, descending) in plan.Columns.Zip(plan.Descending))
+        {
+            var letter = ExcelA1.ColumnName(column);
+            var condition = new SortCondition
+            {
+                Reference = $"{letter}{dataMinRow}:{letter}{parsed.MaxRow}",
+            };
+            if (descending)
+                condition.Descending = true;
+            sortState.Append(condition);
+        }
+        return sortState;
+    }
+
+    private static int WrittenColumns(ExcelSheetDef sheet)
+    {
+        var count = sheet.Headers?.Count ?? 0;
+        foreach (var row in sheet.Data)
+        {
+            if (row.Count > count)
+                count = row.Count;
+        }
+        return count;
+    }
+
+    private static int ResolveColumn(
+        ExcelSheetDef sheet, string keyColumn, int columnsWritten, bool hasHeader)
+    {
+        var text = keyColumn.Trim();
+        if (hasHeader)
+        {
+            var headers = sheet.Headers!;
+            var exact = headers.IndexOf(text);
+            if (exact >= 0)
+                return exact + 1;
+            for (var index = 0; index < headers.Count; index++)
+            {
+                if (string.Equals(headers[index], text, StringComparison.OrdinalIgnoreCase))
+                    return index + 1;
+            }
+            throw new NativeRuntimeException(
+                $"排序键列 '{keyColumn}' 不在表头中（可用表头: {string.Join(", ", headers)}）");
+        }
+
+        int column;
+        if (text.Length is >= 1 and <= 3 && text.All(char.IsAsciiLetter))
+        {
+            column = ExcelA1.ColumnIndex(text);
+        }
+        else if (text.Length > 0 && text.All(char.IsAsciiDigit))
+        {
+            // 超长数字串按越界处理，与 Python int() 后再校验范围的报错一致。
+            column = long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var parsed)
+                ? (parsed > int.MaxValue ? -1 : (int)parsed)
+                : -1;
+        }
+        else
+        {
+            throw new NativeRuntimeException(
+                $"排序列必须是列字母（如 'B'）或 1 基数列号: '{keyColumn}'");
+        }
+        if (column < 1 || column > MaxColumns)
+            throw new NativeRuntimeException($"排序列号超出工作表列范围 1-{MaxColumns}: '{keyColumn}'");
+        if (column > columnsWritten)
+        {
+            throw new NativeRuntimeException(
+                $"排序列 '{text}' 超出数据范围（本次仅写入 {columnsWritten} 列）");
+        }
+        return column;
+    }
+
+    private static JsonElement CellValue(List<JsonElement> row, int column)
+    {
+        var index = column - 1;
+        return index >= 0 && index < row.Count ? row[index] : default;
+    }
+
+    /// <summary>归一后的排序值：类别 + 数值或（小写, 原值）文本。</summary>
+    private readonly record struct SortValue(int Rank, double Number, string Lower, string Original);
+
+    /// <summary>与 Python _sort_value 对齐：数字 < 字符串 < 空，bool 当 1/0。</summary>
+    private static SortValue Normalize(JsonElement value)
+    {
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.Number when value.TryGetDouble(out var number):
+                return double.IsFinite(number)
+                    ? new SortValue(RankNumber, number, "", "")
+                    : new SortValue(RankEmpty, 0, "", "");
+            case JsonValueKind.True:
+                return new SortValue(RankNumber, 1, "", "");
+            case JsonValueKind.False:
+                return new SortValue(RankNumber, 0, "", "");
+            case JsonValueKind.String:
+                var text = value.GetString() ?? "";
+                return text.Length == 0
+                    ? new SortValue(RankEmpty, 0, "", "")
+                    : new SortValue(RankString, 0, text.ToLowerInvariant(), text);
+            default:
+                return new SortValue(RankEmpty, 0, "", "");
+        }
+    }
+
+    private static int CompareRows(SortValue[] left, SortValue[] right, List<bool> descending)
+    {
+        for (var position = 0; position < left.Length; position++)
+        {
+            // Excel 升序/降序都保持空白单元格在末尾，所以空白判定不受方向影响。
+            var leftBlank = left[position].Rank == RankEmpty;
+            var rightBlank = right[position].Rank == RankEmpty;
+            if (leftBlank || rightBlank)
+            {
+                if (leftBlank && rightBlank)
+                    continue;
+                return leftBlank ? 1 : -1;
+            }
+
+            int result;
+            if (left[position].Rank != right[position].Rank)
+            {
+                result = left[position].Rank.CompareTo(right[position].Rank);
+            }
+            else if (left[position].Rank == RankNumber)
+            {
+                result = left[position].Number.CompareTo(right[position].Number);
+            }
+            else
+            {
+                result = string.CompareOrdinal(left[position].Lower, right[position].Lower);
+                if (result == 0)
+                    result = string.CompareOrdinal(left[position].Original, right[position].Original);
+            }
+            if (result != 0)
+                return descending[position] ? -result : result;
+        }
+        return 0;
+    }
 }

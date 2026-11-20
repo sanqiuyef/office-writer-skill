@@ -448,8 +448,240 @@ internal static class WordFileOoxml
                 if (setup.MarginRight is { } right)
                     margin.Right = (uint)Math.Round(right * TwipsPerInch);
             }
+            ApplyColumns(section, setup.Columns, setup.ColumnSpacing);
+            ApplyPageBorder(section, setup.PageBorder, setup.PageBorderColor);
         }
     }
+
+    // ── columns / page borders / watermark ───────────────────────
+
+    private static readonly Dictionary<string, (BorderValues Value, uint Size)> PageBorderStyles =
+        new(StringComparer.Ordinal)
+        {
+            ["single"] = (BorderValues.Single, 4U),
+            ["double"] = (BorderValues.Double, 6U),
+            ["dashed"] = (BorderValues.Dashed, 4U),
+            ["dotted"] = (BorderValues.Dotted, 4U),
+        };
+
+    public static void ApplyColumns(SectionProperties section, int? columns, double? spacing)
+    {
+        if (columns is null && spacing is null)
+            return;
+        if (columns is < 1 or > 4)
+            throw new NativeUsageException("columns 必须是 1-4 的整数");
+        if (spacing is <= 0)
+            throw new NativeUsageException("column_spacing 必须大于 0（英寸）");
+        var element = GetOrAddSectionChild(section, () => new Columns());
+        if (columns is { } count)
+            element.ColumnCount = (short)count;
+        if (spacing is { } inches)
+            element.Space = InchesToTwips(inches);
+    }
+
+    public static void ApplyPageBorder(
+        SectionProperties section, string? style, string? color)
+    {
+        if (style is null && color is null)
+            return;
+        var existing = section.GetFirstChild<PageBorders>();
+        if (style is null)
+        {
+            // 仅给颜色：沿用已有边框线型，避免生成缺少 w:val 的非法边框
+            if (existing is null)
+                return;
+            foreach (var edge in PageBorderEdges(existing))
+                edge.Color = color;
+            return;
+        }
+        if (!PageBorderStyles.TryGetValue(style, out var borderStyle))
+            throw new NativeUsageException(
+                "page_border 必须是 single/double/dashed/dotted 之一");
+        var borders = existing is null || PageBorderEdges(existing).Count() != 4
+            ? CreatePageBorders(section)
+            : existing;
+        borders.OffsetFrom = PageBorderOffsetValues.Page;
+        var borderColor = color ?? "auto";
+        foreach (var edge in PageBorderEdges(borders))
+        {
+            edge.Val = borderStyle.Value;
+            edge.Size = borderStyle.Size;
+            edge.Space = 24U;
+            edge.Color = borderColor;
+        }
+    }
+
+    private static PageBorders CreatePageBorders(SectionProperties section)
+    {
+        // 插入位置沿用既有 pgBorders（替换场景），否则按 schema 顺序定位
+        var existing = section.GetFirstChild<PageBorders>();
+        var insertAt = -1;
+        if (existing is not null)
+        {
+            insertAt = section.ChildElements.ToList().IndexOf(existing);
+            existing.Remove();
+        }
+        var borders = new PageBorders(
+            new TopBorder(),
+            new LeftBorder(),
+            new BottomBorder(),
+            new RightBorder())
+        {
+            OffsetFrom = PageBorderOffsetValues.Page,
+        };
+        if (insertAt >= 0)
+        {
+            section.InsertAt(borders, insertAt);
+            return borders;
+        }
+        var order = Array.IndexOf(SectionChildOrder, "pgBorders");
+        var before = section.ChildElements.FirstOrDefault(
+            child => Array.IndexOf(SectionChildOrder, child.LocalName) > order);
+        if (before is not null)
+            section.InsertBefore(borders, before);
+        else
+            section.Append(borders);
+        return borders;
+    }
+
+    private static IEnumerable<BorderType> PageBorderEdges(PageBorders borders)
+    {
+        BorderType?[] slots =
+        [
+            borders.TopBorder, borders.LeftBorder, borders.BottomBorder, borders.RightBorder,
+        ];
+        foreach (var slot in slots)
+        {
+            if (slot is not null)
+                yield return slot;
+        }
+    }
+
+    /// <summary>
+    /// Writes a VML text watermark into the default header of every section.
+    /// The SDK does not model VML, so the pict/shape payload is injected as raw XML.
+    /// </summary>
+    public static void ApplyWatermark(MainDocumentPart main, string? text, string? color)
+    {
+        if (text is null && color is null)
+            return;
+        if (string.IsNullOrWhiteSpace(text))
+            throw new NativeUsageException("watermark_text 不能为空");
+        var body = main.Document?.Body;
+        if (body is null)
+            return;
+        var fillColor = color ?? "D9D9D9";
+        var seenParts = new HashSet<string>(StringComparer.Ordinal);
+        var sections = body.Descendants<SectionProperties>().ToList();
+        for (var index = 0; index < sections.Count; index++)
+        {
+            var section = sections[index];
+            var reference = section.Elements<HeaderReference>()
+                .FirstOrDefault(item => item.Type?.Value == HeaderFooterValues.Default);
+            HeaderPart header;
+            if (reference?.Id?.Value is { } relationshipId
+                && main.GetPartById(relationshipId) is HeaderPart existing)
+            {
+                header = existing;
+            }
+            else if (index == 0)
+            {
+                // 首个节没有页眉：创建默认页眉；后续节保持“链接到前一节”的继承关系
+                header = main.AddNewPart<HeaderPart>();
+                header.Header = new Header(new Paragraph(new ParagraphProperties(
+                    new ParagraphStyleId { Val = "Header" })));
+                AddHeaderReference(section, main.GetIdOfPart(header));
+            }
+            else
+            {
+                continue;
+            }
+            if (!seenParts.Add(main.GetIdOfPart(header)))
+                continue;
+            header.Header ??= new Header();
+            RemoveWatermarkRuns(header.Header);
+            var paragraph = header.Header.Elements<Paragraph>().FirstOrDefault();
+            if (paragraph is null)
+            {
+                paragraph = new Paragraph(new ParagraphProperties(
+                    new ParagraphStyleId { Val = "Header" }));
+                header.Header.Append(paragraph);
+            }
+            paragraph.Append(ParseWatermarkRun(text!, fillColor));
+            header.Header.Save();
+        }
+    }
+
+    private static void RemoveWatermarkRuns(Header header)
+    {
+        foreach (var paragraph in header.Elements<Paragraph>().ToList())
+        {
+            var removed = false;
+            foreach (var run in paragraph.Elements<Run>().ToList())
+            {
+                if (!IsWatermarkRun(run))
+                    continue;
+                run.Remove();
+                removed = true;
+            }
+            if (removed && !paragraph.ChildElements.Any(child => child is not ParagraphProperties)
+                && header.Elements<Paragraph>().Count() > 1)
+                paragraph.Remove();
+        }
+    }
+
+    private static bool IsWatermarkRun(Run run) =>
+        run.Descendants().Any(element => element.LocalName == "shape"
+            && (element.GetAttributes()
+                    .FirstOrDefault(attribute => attribute.LocalName == "type").Value ?? "")
+                .Contains("_x0000_t136", StringComparison.Ordinal));
+
+    private static Run ParseWatermarkRun(string text, string fillColor)
+    {
+        var style =
+            "position:absolute;margin-left:0;margin-top:0;width:500pt;height:120pt;"
+            + "rotation:-45;z-index:-251658752;mso-position-horizontal:center;"
+            + "mso-position-horizontal-relative:margin;mso-position-vertical:center;"
+            + "mso-position-vertical-relative:margin";
+        var xml =
+            "<w:r xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\""
+            + " xmlns:v=\"urn:schemas-microsoft-com:vml\""
+            + " xmlns:o=\"urn:schemas-microsoft-com:office:office\">"
+            + "<w:rPr><w:noProof/></w:rPr><w:pict>"
+            + WatermarkShapeTypeXml
+            + "<v:shape id=\"PowerPlusWaterMarkObject\" o:spid=\"_x0000_s2049\""
+            + " type=\"#_x0000_t136\""
+            + $" style=\"{style}\" o:allowincell=\"f\" fillcolor=\"#{fillColor}\" stroked=\"f\">"
+            + "<v:fill opacity=\".5\"/>"
+            + "<v:textpath style=\"font-family:&quot;宋体&quot;;font-size:1in\""
+            + $" string=\"{XmlEscapeAttribute(text)}\"/>"
+            + "</v:shape></w:pict></w:r>";
+        return new Run(xml);
+    }
+
+    private const string WatermarkShapeTypeXml =
+        "<v:shapetype id=\"_x0000_t136\" coordsize=\"21600,21600\" o:spt=\"136\""
+        + " adj=\"10800\" path=\"m@7,l@8,m@5,21600l@6,21600e\">"
+        + "<v:formulas>"
+        + "<v:f eqn=\"sum #0 0 10800\"/><v:f eqn=\"prod #0 2 1\"/>"
+        + "<v:f eqn=\"sum 21600 0 @1\"/><v:f eqn=\"sum 0 0 @2\"/>"
+        + "<v:f eqn=\"sum 21600 0 @3\"/><v:f eqn=\"if @0 @3 0\"/>"
+        + "<v:f eqn=\"if @0 21600 @1\"/><v:f eqn=\"if @0 0 @2\"/>"
+        + "<v:f eqn=\"if @0 @4 21600\"/><v:f eqn=\"mid @5 @6\"/>"
+        + "<v:f eqn=\"mid @8 @5\"/><v:f eqn=\"mid @7 @8\"/>"
+        + "<v:f eqn=\"mid @6 @7\"/><v:f eqn=\"sum @6 0 @5\"/>"
+        + "</v:formulas>"
+        + "<v:path textpathok=\"t\" o:connecttype=\"custom\""
+        + " o:connectlocs=\"@9,0;@10,10800;@11,21600;@12,10800\""
+        + " o:connectangles=\"270,180,90,0\"/>"
+        + "<v:textpath on=\"t\" fitshape=\"t\"/>"
+        + "<v:handles><v:h position=\"#0,bottomRight\" xrange=\"6629,14971\"/></v:handles>"
+        + "<o:lock v:ext=\"edit\" text=\"t\" shapetype=\"t\"/>"
+        + "</v:shapetype>";
+
+    private static string XmlEscapeAttribute(string value) =>
+        value.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;")
+            .Replace("\"", "&quot;");
 
     private static T GetOrAddSectionChild<T>(SectionProperties section, Func<T> factory)
         where T : OpenXmlElement

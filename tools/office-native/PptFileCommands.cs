@@ -16,6 +16,8 @@ internal static class PptFileCommands
         var outputPath = NativeCommon.RequireString(p, "output_path");
         EnsurePptExtension(outputPath, "输出文件必须使用 .pptx 扩展名");
         var slides = PptModels.ParseSlides(p);
+        var sections = PptModels.ParseSections(p);
+        var showSettings = PptModels.ParseShowSettings(p);
         var template = NativeCommon.OptString(p, "template");
         var resolved = ResolveOutput(outputPath, p);
         var work = PptFileOoxml.WorkPath(resolved);
@@ -34,6 +36,7 @@ internal static class PptFileCommands
                 if (FirstSlideSize(slides) is { } size)
                     PptFileOoxml.SetSlideSize(presentationPart, size.Width, size.Height);
                 AddSlides(presentationPart, slides);
+                ApplyDecorative(presentationPart, sections, showSettings);
                 document.Save();
             }
             else
@@ -41,7 +44,9 @@ internal static class PptFileCommands
                 var size = FirstSlideSize(slides) ?? (Width: 10.0, Height: 7.5);
                 PptFileOoxml.CreateScratch(work, size.Width, size.Height);
                 using var document = PptFileOoxml.Open(work, true);
-                AddSlides(PptFileOoxml.MainPart(document), slides);
+                var presentationPart = PptFileOoxml.MainPart(document);
+                AddSlides(presentationPart, slides);
+                ApplyDecorative(presentationPart, sections, showSettings);
                 document.Save();
             }
 
@@ -94,8 +99,44 @@ internal static class PptFileCommands
             }
             if (!string.IsNullOrEmpty(slide.Notes))
                 PptFileOoxml.AddNotes(writer.Part, slide.Notes!);
+            if (!string.IsNullOrEmpty(slide.FooterText) || slide.ShowSlideNumber)
+                ApplyFooterAndNumber(writer, slide);
             writer.Save();
         }
+    }
+
+    /// <summary>页脚/页码：占位符优先，占位符缺失时新建文本框。</summary>
+    private static void ApplyFooterAndNumber(PptSlideWriter writer, PptSlideDef slide)
+    {
+        var presentationPart = writer.Part.GetParentParts()
+            .OfType<PresentationPart>().FirstOrDefault()
+            ?? throw new NativeRuntimeException("幻灯片不属于演示文稿");
+        // 新幻灯片已追加到 sldIdLst 末尾，列表长度就是它在演示文稿中的 1 基位置；
+        // 模板/追加场景下页码要接着已有幻灯片编号，而不是从 1 重新开始。
+        var slideNumber = presentationPart.Presentation.SlideIdList?
+            .Elements<XPresentation.SlideId>().Count() ?? 1;
+        if (slideNumber < 1)
+            slideNumber = 1;
+        var geometry = PptFileOoxml.FooterGeometryFor(
+            PptFileOoxml.ToInches(presentationPart.Presentation.SlideSize?.Cx?.Value ?? 9144000),
+            PptFileOoxml.ToInches(presentationPart.Presentation.SlideSize?.Cy?.Value ?? 6858000));
+        var context = PptFileOoxml.ContextFor(writer.Part);
+        if (!string.IsNullOrEmpty(slide.FooterText))
+            PptFileOoxml.ApplyFooter(writer.Document, slide.FooterText!,
+                context, geometry, writer.TakeId());
+        if (slide.ShowSlideNumber)
+            PptFileOoxml.ApplySlideNumber(writer.Document, slideNumber,
+                context, geometry, writer.TakeId());
+    }
+
+    /// <summary>创建时写节与放映设置；两者都没有则完全不碰 presentation.xml / presProps.xml。</summary>
+    private static void ApplyDecorative(PresentationPart presentationPart,
+        IReadOnlyList<PptSectionDef> sections, PptShowSettingsDef? showSettings)
+    {
+        if (sections.Count > 0)
+            PptFileOoxml.WriteSections(presentationPart, sections);
+        if (showSettings is not null)
+            PptFileOoxml.WriteShowSettings(presentationPart, showSettings);
     }
 
     // ── edit-powerpoint ──────────────────────────────────────────
