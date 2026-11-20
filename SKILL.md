@@ -136,6 +136,28 @@ python -X utf8 scripts/<脚本名>.py --help
 
 `SectionItem.type` 另支持 `hyperlink`（`HyperlinkDef`）与 `field`（`FieldDef`：PAGE/NUMPAGES/SECTIONPAGES/DATE/TIME/FILENAME/AUTHOR/TITLE/CUSTOM）。`SheetDef` 另支持 `charts`/`conditional_formats`/`data_validations`/`tables`/`defined_names`/`hyperlinks`/`comments`/`images`/`page_setup`/`row_heights`/`sheet_state`；`SlideTableDef`/`ChartDef` 支持 x/y/width/height，`SlideImageDef` 支持四边裁剪与超链接。参数细节与 JSON 模型见 `references/cli_args.md`，全部字段（含默认值/类型/说明）见 `references/models_word.md`、`models_excel.md`、`models_ppt.md`、`models_pdf_common.md`；模型定义源在 `scripts/office_engine/models.py`。转换/渲染/重算的后端顺序用 `OFFICE_CONVERT_BACKEND=auto|dsoffice|com|none` 控制：默认 auto 依次尝试 dsoffice、Microsoft Office COM、WPS COM；dsoffice 安装与 COM 排错见 `references/conversion.md`。
 
+## PPT 模板库（6 套 16:9）
+
+`templates/ppt/` 提供 6 套成品模板，每套两种形态：`.pptx` 是 8 页示例 deck（直接改文字交付），`.potx` 是 0 页版式模板（供 `--template` 生成新 deck，不会带出示例页）。
+
+| slug | 场景 | 适用 |
+|:---|:---|:---|
+| `business-report` | 商务办公 | 经营分析、季度汇报、项目复盘 |
+| `consulting` | 商务办公 | 战略咨询、方案提案、路演 |
+| `academic-defense` | 学术科研 | 学位论文答辩、课题结题 |
+| `academic-seminar` | 学术科研 | 开题、组会、中期检查 |
+| `government-report` | 政务公文 | 工作汇报、年度总结、督察整改 |
+| `government-briefing` | 政务公文 | 政策解读、宣讲培训 |
+
+```bash
+# 套版式生成新 deck；.potx 无示例页，画幅随模板（16:9）
+python -X utf8 scripts/create_powerpoint.py --output-path 答辩.pptx \
+  --template templates/ppt/academic-defense.potx \
+  --params '{"slides":[{"layout":"title","title":"论文题目","subtitle":"答辩人 · 导师 · 日期"}]}'
+```
+
+配色、页序、字体与每页用途见 `assets/manifest.json`；完整用法与约束见 `templates/README.md`；重新生成模板用 `python -X utf8 tools/build_ppt_templates.py`。
+
 ## 常用示例
 
 ```bash
@@ -189,7 +211,7 @@ python -X utf8 scripts/render_document_pages.py --input-path 报告.pdf --output
 | Word 批注/属性 | `word_manage_comments`（增/列）→ `word_set_properties`（读写属性） |
 | PPT 已有文件加链接 | `read_powerpoint` 看形状 → `ppt_set_hyperlinks`（`shape_index`/`shape_text`） |
 | 在打开着的 PPT 里加形状 | `ppt_manage_shapes`（`action=add`，`slide` + `shape`）；文件已打开走活动文档 COM，无需关闭；未打开时自动走文件级并备份 |
-| 做 PPT | `ppt_list_color_schemes` 选配色 → `create_powerpoint` → `ppt_apply_color_scheme` → `ppt_optimize_slide_layout`（审阅 warnings；需要时 `--reflow` 或 `--fix-spacing`）→ `ppt_clean_unused_placeholders` → `render_document_pages` |
+| 做 PPT | 按场景选 `templates/ppt/<slug>.potx`（见 `assets/manifest.json`）→ `create_powerpoint --template` → 需要时 `ppt_apply_color_scheme` → `ppt_optimize_slide_layout`（审阅 warnings；需要时 `--reflow` 或 `--fix-spacing`）→ `ppt_clean_unused_placeholders` → `render_document_pages` |
 | PPT 框架图 | `ppt_create_framework_diagram`（文件级）或 `ppt_add_flowchart_slide`（活动文档） |
 | 精细改某段/某格/某形状 | `inspect_office_document` 取路径 → `batch_edit_office_document`（原子）→ `read_*` 复核 |
 | 转 PDF/预览 | `convert_to_pdf`（自动回退 COM）→ `render_document_pages` → 需要时用 pymupdf 读 span 字号（见 `references/render_qa.md`） |
@@ -251,15 +273,17 @@ stdout 默认只输出一个 JSON 对象，不提供 `--json` 开关；诊断写
 | 中文字号、场景排版、页眉页脚/页码域、PDF 字体 | `references/fonts_page_numbers.md` |
 | Word/Excel 表格样式、PPT 布局/配色/框架图、`--reflow` | `references/tables_slides.md` |
 | 渲染预览、pymupdf 读 span 字号、缺字体、视觉验收 | `references/render_qa.md` |
+| 选模板/查素材/模板用法 | `assets/manifest.json`、`templates/README.md` |
 | 45 个入口的 flag、`--params` 字段、JSON 示例 | `references/cli_args.md` |
 | Word/Excel/PPT 逐项功能面与覆盖状态 | `references/capabilities_word.md`、`capabilities_excel.md`、`capabilities_ppt.md` |
 | C# office-native 构建、命令、COM 边界 | `tools/office-native/README.md` |
 | dsoffice/Office/WPS 后端顺序、转换/渲染/重算回退、OCR | `references/conversion.md` |
 
-工程文件：`README.md`（安装/运行时/测试/边界）、`config/defaults.json`（超时与渲染默认值）、`templates/`（起步模板）、`assets/`（示例与缓存说明）、`tests/`（契约/结构/触发/parity）。
+工程文件：`README.md`（安装/运行时/测试/边界）、`config/defaults.json`（超时与渲染默认值）、`templates/`（起步模板 + 6 套 16:9 PPT 模板）、`assets/`（素材清单 `manifest.json`、示例与缓存说明）、`tests/`（契约/结构/触发/parity）。
 
 ## 验证状态
 
+- **2026-11-20 PPT 模板库实测**：`templates/ppt/` 6 套 16:9 模板（每套 `.pptx` 8 页示例 + `.potx` 0 页版式）；用 `academic-defense.potx` 经 `create_powerpoint --template` 生成 2 页，画幅 13.33×7.5、`Title Slide`/`Title and Content` 索引正确，标题 30pt 主题色左对齐、正文 18pt 由版式 `lstStyle` 继承；6 套封面/内容/图表/表格/两栏页经 PDF→PNG 渲染核对。
 - **自动化**：2026-11-20 引擎切换后全量 **64 项通过、0 跳过、0 失败**；复跑 `python -X utf8 -m unittest discover -s tests -v`。覆盖 45 个入口 `--help`、固定输出全量比对、退出码 1/2/3、创建→读取→校验往返、结构/触发基线、字体回退、渲染计数修正、批量备份、PPT 越界/重叠审计与 `--reflow`、dsoffice 与真实 Office/WPS COM、COM 缺失回退、17 项 validate fixture、扫描件 OCR，以及覆盖闸门（拒绝非空、空白放行、确认覆盖生成备份、编辑生成备份）。
 - **2026-11-20 `ppt_manage_shapes` 实测**：活动文档 add 返回 `mode=open_document`（文件开着时直接加到当前窗口并保存，无需关闭）；文件级 add 返回 `mode=file` 并生成 `.bak-*`；list 两条路径的索引/名称/位置/文本一致（`type` 在文件级为 XML 元素名、在活动文档为 Mso 类型码；`preset` 仅文件级输出）；越界 slide 返回退出码 2；渲染 PNG 核对形状位置与文字正确。
 - **2026-11-20 引擎策略调整实测**：默认改为 Python 优先，`ppt_manage_shapes` 同时具备 Python（活动文档 COM + python-pptx 文件级）与 C# 实现；三路径（默认 Python 文件级、显式 C#、活动文档 COM）add/list 与越界/非法颜色/非法尺寸退出码均通过；全量 64 项通过、0 跳过；7 个 C# 专属入口仍自动走 C#。

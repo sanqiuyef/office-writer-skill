@@ -7,7 +7,7 @@
 
 | 功能域 | 能力项 | 状态 | 入口 / 参数 / 限制 |
 |:---|:---|:---|:---|
-| 演示文稿 | 新建、模板（含 .potx）、追加幻灯片、删除/移动幻灯片 | 已覆盖 | `create_powerpoint`、`edit_powerpoint`、`batch_edit_office_document`；.potx 用临时工作副本改内容类型 |
+| 演示文稿 | 新建、模板（含 .potx）、追加幻灯片、删除/移动幻灯片；6 套成品模板（商务/咨询/学术答辩/开题组会/政务汇报/政策宣讲，均为 16:9，每套 `.pptx` 8 页示例 + `.potx` 0 页版式） | 已覆盖 | `create_powerpoint`、`edit_powerpoint`、`batch_edit_office_document`；.potx 用临时工作副本改内容类型；模板清单见 `assets/manifest.json`，重新生成用 `tools/build_ppt_templates.py` |
 | 版式 | 9 种内置版式（title/section/content/two_content/comparison/title_only/blank/content_caption/picture_caption） | 已覆盖 | `SlideDef.layout`；按版式名映射固定索引，自定义模板布局顺序不同会错位 |
 | 占位符 | 标题/副标题/正文填充、清空空白占位符、双栏左右分栏 | 已覆盖 | `_build_slide_body(placeholder_idx=1/2)`；无新增任意占位符 API |
 | 文本 | 段落、级别、字体名/字号/粗斜体/颜色、对齐、中英混排 | 已覆盖 | `SlideItem.type=paragraph` + `TextStyle` |

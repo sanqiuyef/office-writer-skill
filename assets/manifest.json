@@ -1,0 +1,148 @@
+{
+  "version": "1.0.0",
+  "updated": "2026-11-20",
+  "description": "office-writer 可分发素材清单。模型先查本文件选择素材，再调用对应入口；不要凭空假设模板存在。",
+  "powerpoint_templates": [
+    {
+      "slug": "business-report",
+      "name": "商务汇报",
+      "scene": "商务办公",
+      "demo": "templates/ppt/business-report.pptx",
+      "layout_template": "templates/ppt/business-report.potx",
+      "slide_size": "13.333x7.5",
+      "slide_count": 8,
+      "page_plan": ["封面", "目录", "章节页", "内容页", "图表页", "表格页", "两栏页", "结尾页"],
+      "colors": {"primary": "1F3864", "secondary": "2E75B6", "accent": "ED7D31", "light": "F2F2F2"},
+      "fonts": {"title": "微软雅黑", "body": "微软雅黑"},
+      "use_for": ["年度经营分析", "季度汇报", "项目复盘", "部门工作总结"],
+      "notes": "左侧深蓝竖条 + 右侧圆环；标题左对齐，橙色强调线；表格表头深蓝底白字。"
+    },
+    {
+      "slug": "consulting",
+      "name": "咨询提案",
+      "scene": "商务办公",
+      "demo": "templates/ppt/consulting.pptx",
+      "layout_template": "templates/ppt/consulting.potx",
+      "slide_size": "13.333x7.5",
+      "slide_count": 8,
+      "page_plan": ["深色封面", "目录", "深色章节页", "结论式内容页", "图表页", "表格页", "两栏页", "结尾页"],
+      "colors": {"primary": "1A1A1A", "secondary": "00529B", "accent": "F2A900", "light": "F5F7FA"},
+      "fonts": {"title": "微软雅黑", "body": "微软雅黑"},
+      "use_for": ["战略咨询", "方案提案", "投融资路演", "管理诊断"],
+      "notes": "深灰全屏封面/章节页，白色标题 + 金色竖条；内容页标题写结论（action title）。"
+    },
+    {
+      "slug": "academic-defense",
+      "name": "学术答辩",
+      "scene": "学术科研",
+      "demo": "templates/ppt/academic-defense.pptx",
+      "layout_template": "templates/ppt/academic-defense.potx",
+      "slide_size": "13.333x7.5",
+      "slide_count": 8,
+      "page_plan": ["封面（题目/答辩人/导师）", "汇报提纲", "章节页", "研究问题", "实验结果图表", "方法对比表格", "贡献与不足", "致谢"],
+      "colors": {"primary": "003366", "secondary": "1F7A8C", "accent": "D97706", "light": "F4F7FB"},
+      "fonts": {"title": "华文中宋", "body": "微软雅黑"},
+      "use_for": ["学位论文答辩", "课题结题", "学术会议报告"],
+      "notes": "顶部深蓝色带 + 金色短线；标题华文中宋，正文微软雅黑。"
+    },
+    {
+      "slug": "academic-seminar",
+      "name": "开题与组会",
+      "scene": "学术科研",
+      "demo": "templates/ppt/academic-seminar.pptx",
+      "layout_template": "templates/ppt/academic-seminar.potx",
+      "slide_size": "13.333x7.5",
+      "slide_count": 8,
+      "page_plan": ["封面", "汇报提纲", "章节页", "研究问题与价值", "前期结果图表", "进度安排表格", "可行性分析", "结尾"],
+      "colors": {"primary": "1B4332", "secondary": "40916C", "accent": "B7791F", "light": "F4F7F4"},
+      "fonts": {"title": "华文中宋", "body": "微软雅黑"},
+      "use_for": ["开题报告", "组会汇报", "学术沙龙", "中期检查"],
+      "notes": "墨绿顶部色带，风格比答辩模板更轻。"
+    },
+    {
+      "slug": "government-report",
+      "name": "政务汇报",
+      "scene": "政务公文",
+      "demo": "templates/ppt/government-report.pptx",
+      "layout_template": "templates/ppt/government-report.potx",
+      "slide_size": "13.333x7.5",
+      "slide_count": 8,
+      "page_plan": ["封面（单位/日期）", "汇报提纲", "章节页", "工作概况", "指标完成图表", "任务完成表格", "做法与成效", "结尾"],
+      "colors": {"primary": "A61B29", "secondary": "8C1C13", "accent": "C9A063", "light": "FBF7F0"},
+      "fonts": {"title": "华文中宋", "body": "仿宋"},
+      "use_for": ["政务工作汇报", "年度总结", "专项工作汇报", "督察整改汇报"],
+      "notes": "中国红竖条 + 金色强调线；标题华文中宋，正文仿宋，接近公文气质。"
+    },
+    {
+      "slug": "government-briefing",
+      "name": "政策宣讲",
+      "scene": "政务公文",
+      "demo": "templates/ppt/government-briefing.pptx",
+      "layout_template": "templates/ppt/government-briefing.potx",
+      "slide_size": "13.333x7.5",
+      "slide_count": 8,
+      "page_plan": ["红色封面", "解读提纲", "红色章节页", "政策背景", "新旧对比图表", "主要变化表格", "落实要求", "结尾"],
+      "colors": {"primary": "C00000", "secondary": "8B0000", "accent": "B8860B", "light": "FAF7F2"},
+      "fonts": {"title": "华文中宋", "body": "仿宋"},
+      "use_for": ["政策解读", "宣讲培训", "落实部署", "新规培训"],
+      "notes": "红色全屏封面/章节页，白色标题；适合政策解读与新旧对比。"
+    }
+  ],
+  "word_templates": [
+    {
+      "path": "templates/word_template.docx",
+      "name": "Word 基础模板",
+      "use_for": ["占位符填充", "继承页眉页脚与正文样式"],
+      "placeholders": ["title", "summary", "body", "company", "footer"],
+      "notes": "骨架模板；正式排版用 create_word_document --scene academic/report/official/contract/resume/exam/journal。"
+    }
+  ],
+  "excel_templates": [
+    {
+      "path": "templates/excel_template.xlsx",
+      "name": "Excel 基础模板",
+      "use_for": ["占位符填充", "继承工作表结构与表头样式"],
+      "placeholders": ["title", "detail_title"],
+      "notes": "骨架模板；业务表用 create_excel_workbook 的 sheets/charts/conditional_formats 等字段生成。"
+    }
+  ],
+  "color_schemes": {
+    "command": "scripts/ppt_list_color_schemes.py",
+    "count": 12,
+    "notes": "12 套内置调色板，可用 ppt_apply_color_scheme 应用到已有 PPT；与 templates/ppt 的主题配色相互独立。"
+  },
+  "cover_recipes": {
+    "location": "scripts/office_engine/covers.py",
+    "count": 7,
+    "notes": "create_word_document 的 cover_config.recipe_id 支持 R1–R7，程序化生成 Word 封面。"
+  },
+  "examples": [
+    "assets/examples/word_report.json",
+    "assets/examples/excel_table.json",
+    "assets/examples/ppt_deck.json",
+    "assets/examples/framework_diagram.json"
+  ],
+  "usage": {
+    "new_deck_from_layout": "python -X utf8 scripts/create_powerpoint.py --output-path 新演示.pptx --template templates/ppt/academic-defense.potx --params '{\"slides\":[{\"layout\":\"title\",\"title\":\"...\"}]}'",
+    "edit_demo_copy": "复制 templates/ppt/<slug>.pptx 到目标目录后直接改文字，或用 batch_edit_office_document 按路径替换。",
+    "fill_placeholders": "merge_office_template 只替换 {{key}} 文本；图片、表格循环与条件块尚未支持。",
+    "layout_index": {
+      "title": 0,
+      "content": 1,
+      "section": 2,
+      "two_content": 3,
+      "comparison": 4,
+      "title_only": 5,
+      "blank": 6,
+      "content_caption": 7,
+      "picture_caption": 8
+    }
+  },
+  "constraints": [
+    "6 套模板都是 16:9（13.333x7.5 英寸），11 个版式顺序与内置映射一致。",
+    "标题字体依赖华文中宋（STZHONGS.TTF）或微软雅黑；缺失时 PowerPoint 会回退，版式不保证一致。",
+    "正文使用仿宋（政务两套）或微软雅黑；跨机器分发前先确认目标机字体。",
+    "模板只含自制示例文案，不含客户数据或第三方内容。",
+    "重新生成模板：python -X utf8 tools/build_ppt_templates.py"
+  ]
+}

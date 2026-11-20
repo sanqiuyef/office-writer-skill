@@ -60,7 +60,7 @@ OFFICE_NATIVE_ENGINE=python python -X utf8 -m unittest discover -s tests -v
 OFFICE_NATIVE_ENGINE=csharp python -X utf8 -m unittest discover -s tests -v
 ```
 
-2026-11-20 引擎策略调整后全量实测：**64 项通过、0 跳过、0 失败**。覆盖 45 个入口 `--help`、固定输出全量比对、退出码 1/2/3、创建→读取→校验往返、结构/触发基线、字体回退、渲染计数修正、批量备份、PPT 越界/重叠审计与 `--reflow`、dsoffice 与真实 Office/WPS COM 转换/重算、COM 缺失回退、17 项 validate 实检 fixture、扫描件 OCR、覆盖闸门、`ppt_manage_shapes` 三路径（Python 文件级/显式 C#/活动文档 COM），以及 4 项 P2 回归（Excel 日期/流式读取、批量合并区、PPT 图表内嵌工作簿、Word 页眉样式与分节）。有意改固定 CLI 行为后先运行：
+2026-11-20 引擎策略调整后全量实测：**70 项通过、0 跳过、0 失败**。覆盖 45 个入口 `--help`、固定输出全量比对、退出码 1/2/3、创建→读取→校验往返、结构/触发基线、字体回退、渲染计数修正、批量备份、PPT 越界/重叠审计与 `--reflow`、dsoffice 与真实 Office/WPS COM 转换/重算、COM 缺失回退、17 项 validate 实检 fixture、扫描件 OCR、覆盖闸门、`ppt_manage_shapes` 三路径（Python 文件级/显式 C#/活动文档 COM）、PPT 模板库契约（6 套 16:9、版式顺序、`.potx` 套用），以及 4 项 P2 回归（Excel 日期/流式读取、批量合并区、PPT 图表内嵌工作簿、Word 页眉样式与分节）。有意改固定 CLI 行为后先运行：
 
 ```bash
 python -X utf8 tests/update_expected.py
@@ -75,7 +75,7 @@ python -X utf8 tests/update_expected.py
 - `scripts/office_engine/*.py` 是 mcp-office-writer 0.6.0（2026-11）的 vendored 副本；每个文件头写明上游路径、版本和修改点。升级上游时整包替换并同步 `tests/test_parity.py` 的 golden。
 - 本 skill 对引擎的增量：转换/渲染/重算回退链与 COM、17 项 validate 实检、PPT `reflow_slide_layout`、Word 域 XML 与封面边框顺序修正；2026-11 扩展 Word 超链接/通用域/文档属性、Excel 图表/条件格式/数据验证/超级表/名称/批注/图片/页面设置、PPT 表格与图表几何/图片裁剪/真列表/双栏占位符/`.potx`、PPT 活动文档形状绘制；45 个入口都有 C# `tools/office-native/` 实现（Open XML SDK + COM），默认由 Python 引擎执行，C# 作为可选后端与 7 个缺口入口的实现（源码在 `tools/office-native/`，二进制构建后放 `dist/`，不提交）。
 - 入口脚本只保留 `build_parser()`/`run(args)`/`main()`；共享契约在 `scripts/_common.py`。新增能力应新增 1:1 入口，不把逻辑塞进 `_common.py`。
-- 素材：`templates/` 起步模板、`assets/examples/` 合成示例、`references/` 主题文档。模板/示例改动后跑测试与一次渲染验收。
+- 素材：`templates/` 起步模板与 6 套 16:9 PPT 模板（`templates/ppt/`，每套 `.pptx` 8 页示例 + `.potx` 0 页版式）、`assets/examples/` 合成示例、`assets/manifest.json` 素材清单、`references/` 主题文档。模板/示例改动后跑测试与一次渲染验收；PPT 模板用 `tools/build_ppt_templates.py` 重新生成。
 - 超时/DPI 默认值在 `config/defaults.json`；不要把密钥或机器绝对路径写进配置。
 
 ## 已知边界（已解决/降级）
