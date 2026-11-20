@@ -1,6 +1,7 @@
 # Vendored from mcp_office_writer/office_com.py (mcp-office-writer 0.6.0, 2026-11).
 # Upstream path: mcp_office_writer/office_com.py (repository-relative).
-# Modifications: none beyond this provenance header; package-relative imports unchanged.
+# Modifications: Excel COM candidates now prefer KET.Application (WPS) then et.Application,
+# while retaining Excel.Application; active Excel/PPT appends reject extension fields they cannot write.
 """Windows COM bridge for Office documents that are already open."""
 
 from __future__ import annotations
@@ -85,7 +86,7 @@ def get_open_office_documents() -> dict[str, object]:
                 for index in range(1, application.Documents.Count + 1):
                     document = application.Documents.Item(index)
                     result["word"].append({"file_path": str(document.FullName), "application": prog_id})
-            for application, prog_id in _active_applications(("Excel.Application", "et.Application")):
+            for application, prog_id in _active_applications(("Excel.Application", "KET.Application", "et.Application")):
                 for index in range(1, application.Workbooks.Count + 1):
                     workbook = application.Workbooks.Item(index)
                     result["excel"].append({"file_path": str(workbook.FullName), "application": prog_id})
@@ -240,6 +241,35 @@ def try_edit_open_word_document(file_path: str, append_sections: list[SectionIte
         return EditResult(success=False, file_path=file_path, message=f"活动 Word 文档操作失败: {exc}")
 
 
+def _excel_sheet_has_com_unsupported_fields(sheet: SheetDef) -> bool:
+    """COM 追加路径只实现旧字段；用了新扩展字段时必须显式失败，不能静默丢弃。"""
+    if any((
+        sheet.row_heights,
+        sheet.charts,
+        sheet.conditional_formats,
+        sheet.data_validations,
+        sheet.tables,
+        sheet.defined_names,
+        sheet.hyperlinks,
+        sheet.comments,
+        sheet.images,
+        sheet.page_setup,
+    )):
+        return True
+    if sheet.sheet_state != "visible":
+        return True
+    header = sheet.header_style
+    if header and (header.italic is not None or header.vertical_alignment is not None or header.border is not None):
+        return True
+    for column in sheet.column_formats or []:
+        if any(value is not None for value in (
+            column.width, column.font_size, column.bold, column.italic,
+            column.wrap_text, column.vertical_alignment,
+        )):
+            return True
+    return False
+
+
 def _validate_excel_sheets(workbook: Any, sheets: list[SheetDef]) -> None:
     existing = {str(workbook.Worksheets.Item(index).Name).casefold() for index in range(1, workbook.Worksheets.Count + 1)}
     planned: set[str] = set()
@@ -251,6 +281,12 @@ def _validate_excel_sheets(workbook: Any, sheets: list[SheetDef]) -> None:
         normalised = name.casefold()
         if normalised in existing or normalised in planned:
             raise ActiveOfficeDocumentError(f"工作表名称已存在: {name!r}")
+        if _excel_sheet_has_com_unsupported_fields(sheet):
+            raise ActiveOfficeDocumentError(
+                f"工作表 {name!r} 使用了活动 Excel 追加暂不支持的扩展字段"
+                "（图表/条件格式/数据验证/超级表/名称/批注/图片/页面设置/行高/隐藏/边框等）；"
+                "请关闭文件后使用文件级 edit_excel_workbook"
+            )
         planned.add(normalised)
 
 
@@ -352,7 +388,7 @@ def try_edit_open_excel_workbook(file_path: str, append_sheets: list[SheetDef]) 
             application = None
             prog_id = None
             workbook = None
-            for candidate, candidate_prog_id in _active_applications(("Excel.Application", "et.Application")):
+            for candidate, candidate_prog_id in _active_applications(("Excel.Application", "KET.Application", "et.Application")):
                 candidate_workbook = _excel_workbook(candidate, file_path)
                 if candidate_workbook is not None:
                     application, prog_id, workbook = candidate, candidate_prog_id, candidate_workbook
@@ -466,6 +502,23 @@ def _ppt_apply_text_style(text_range: Any, style: TextStyle | None) -> None:
         font.Color.RGB = _ppt_color(style.color)
 
 
+def _ppt_item_has_com_unsupported_fields(item: SlideItem) -> bool:
+    if item.type == "table" and item.table:
+        table = item.table
+        return any(value is not None for value in (
+            table.x, table.y, table.width, table.height, table.column_widths,
+        ))
+    if item.type == "image" and item.image:
+        image = item.image
+        return any(value is not None for value in (
+            image.crop_left, image.crop_right, image.crop_top, image.crop_bottom,
+            image.hyperlink_url,
+        ))
+    if item.type == "shape" and item.shape:
+        return item.shape.hyperlink_url is not None
+    return False
+
+
 def _validated_ppt_slides(slides: list[SlideDef]) -> None:
     """Validate that all slide item types are supported by COM bridge."""
     supported = {"paragraph", "table", "image", "shape", "connector"}
@@ -478,6 +531,11 @@ def _validated_ppt_slides(slides: list[SlideDef]) -> None:
                 if item.type not in supported:
                     raise ActiveOfficeDocumentError(
                         f"幻灯片 #{idx} 的 {item.type!r} 类型暂不支持活动 PPT 编辑"
+                    )
+                if _ppt_item_has_com_unsupported_fields(item):
+                    raise ActiveOfficeDocumentError(
+                        f"幻灯片 #{idx} 的 {item.type!r} 使用了活动 PPT 暂不支持的"
+                        "几何/裁剪/超链接字段；请关闭文件后使用文件级 edit_powerpoint"
                     )
 
 

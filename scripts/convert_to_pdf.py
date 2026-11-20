@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 import _common as common
+import _native as native
 from office_engine.office_convert import convert_to_pdf
 
 TOOL = "convert_to_pdf"
@@ -15,20 +17,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser = common.json_parser(TOOL, "将 Office 文档高保真转换为 PDF（内置 dsoffice/LibreOffice 引擎）。")
     parser.add_argument("--input-path", dest="input_path")
     parser.add_argument("--output-path", dest="output_path")
-    parser.add_argument("--if-exists", dest="if_exists")
+    common.add_overwrite_flags(parser)
     parser.add_argument("--sheet")
     return parser
 
 
 def run(args):
     params = common.parse_params(args)
+    if native.use_csharp(TOOL):
+        return native.run_entry_from_args(TOOL, args, params)
     input_path = common.arg(args, params, "input_path", required=True)
     output_path = common.arg(args, params, "output_path")
-    if_exists = common.choice(
-        common.arg(args, params, "if_exists", "overwrite"),
-        {"overwrite", "error", "rename"},
-        "if_exists",
-    )
+    requested = output_path or str(Path(input_path).with_suffix(".pdf"))
+    if_exists = common.output_policy(args, params, requested)
     sheet = common.arg(args, params, "sheet")
     timeout_result = {
         "success": False,

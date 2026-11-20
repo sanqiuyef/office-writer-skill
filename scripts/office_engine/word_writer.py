@@ -1,6 +1,6 @@
 # Vendored from mcp_office_writer/word_writer.py (mcp-office-writer 0.6.0, 2026-11).
 # Upstream path: mcp_office_writer/word_writer.py (repository-relative).
-# Modifications: wrap PAGE/TOC field characters and instruction text in w:r runs (required by Microsoft Word) and mark TOC fields dirty for updating.
+# Modifications: wrap PAGE/TOC field characters and instruction text in w:r runs (required by Microsoft Word) and mark TOC fields dirty for updating; add hyperlink/field content blocks and core-properties writing.
 
 """
 mcp-office-writer - Word (.docx) 写入/编辑逻辑
@@ -11,8 +11,10 @@ import logging
 import os
 import re
 from typing import TYPE_CHECKING
+from xml.sax.saxutils import escape
 
 from docx import Document
+from docx.opc.constants import RELATIONSHIP_TYPE as RT
 from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.section import WD_ORIENT
@@ -23,6 +25,7 @@ if TYPE_CHECKING:
     from .models import (
         WordContent, SectionItem, ParagraphStyle, PageSetup,
         HeaderFooter, FontConfig, CreateResult, EditResult,
+        HyperlinkDef, FieldDef, WordProperties,
     )
 
 logger = logging.getLogger(__name__)
@@ -175,131 +178,107 @@ def _set_header_footer(doc, hf: HeaderFooter | None):
                 p.text = hf.footer_text
 
 
+def _escape_attr(value: str) -> str:
+    """转义 XML 属性值中的引号与实体字符。"""
+    return escape(value, {'"': "&quot;"})
+
+
+def _add_hyperlink_paragraph(doc, link: HyperlinkDef, default_font: FontConfig | None):
+    """向文档追加一个超链接段落，返回新段落。"""
+    from .utils import cn_size_to_pt
+
+    p = doc.add_paragraph()
+    r_id = doc.part.relate_to(link.url, RT.HYPERLINK, is_external=True)
+
+    rpr_parts: list[str] = []
+    if default_font:
+        if default_font.name:
+            font_name = _escape_attr(default_font.name)
+            rpr_parts.append(
+                f'<w:rFonts w:ascii="{font_name}" w:hAnsi="{font_name}" '
+                f'w:eastAsia="{font_name}"/>'
+            )
+    rpr_parts.append('<w:color w:val="0563C1"/>')
+    if default_font and default_font.size is not None:
+        half_points = int(round(cn_size_to_pt(default_font.size) * 2))
+        rpr_parts.append(f'<w:sz w:val="{half_points}"/><w:szCs w:val="{half_points}"/>')
+    rpr_parts.append('<w:u w:val="single"/>')
+
+    tooltip = f' w:tooltip="{_escape_attr(link.tooltip)}"' if link.tooltip else ""
+    p._element.append(parse_xml(
+        f'<w:hyperlink {nsdecls("w", "r")} r:id="{r_id}"{tooltip}>'
+        f'<w:r><w:rPr>{"".join(rpr_parts)}</w:rPr>'
+        f'<w:t xml:space="preserve">{escape(link.text)}</w:t></w:r>'
+        f'</w:hyperlink>'
+    ))
+    return p
+
+
+def _add_field_paragraph(doc, field: FieldDef):
+    """向文档追加一个域段落（PAGE/NUMPAGES/DATE 等），返回新段落。"""
+    field_type = field.field_type
+    if field_type == "CUSTOM":
+        if not field.code:
+            raise ValueError("CUSTOM 域必须提供 field.code")
+        code = field.code
+    elif field_type in ("PAGE", "NUMPAGES", "SECTIONPAGES"):
+        code = f" {field_type} "
+        if field.number_format:
+            code = f" {field_type} \\* {field.number_format} "
+    elif field_type == "DATE":
+        code = ' DATE \\@ "yyyy年M月d日" '
+    elif field_type == "TIME":
+        code = ' TIME \\@ "HH:mm" '
+    else:
+        code = f" {field_type} "
+
+    fallback_text = field.fallback_text if field.fallback_text is not None else " "
+    p = doc.add_paragraph()
+    # fldChar/instrText 必须包在 w:r 中，否则 Word 不识别域
+    p._element.append(parse_xml(
+        f'<w:r {nsdecls("w")}><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r>'
+    ))
+    p._element.append(parse_xml(
+        f'<w:r {nsdecls("w")}><w:instrText xml:space="preserve">{escape(code)}</w:instrText></w:r>'
+    ))
+    p._element.append(parse_xml(
+        f'<w:r {nsdecls("w")}><w:fldChar w:fldCharType="separate"/></w:r>'
+    ))
+    p._element.append(parse_xml(
+        f'<w:r {nsdecls("w")}><w:t xml:space="preserve">{escape(fallback_text)}</w:t></w:r>'
+    ))
+    p._element.append(parse_xml(
+        f'<w:r {nsdecls("w")}><w:fldChar w:fldCharType="end"/></w:r>'
+    ))
+    return p
+
+
+def _apply_core_properties(doc, props: WordProperties) -> None:
+    """写入文档核心属性；不支持自定义属性（custom properties）。"""
+    from datetime import datetime
+
+    cp = doc.core_properties
+    for name in (
+        "title", "subject", "author", "keywords", "comments",
+        "category", "last_modified_by",
+    ):
+        value = getattr(props, name)
+        if value is not None:
+            setattr(cp, name, value)
+    for name in ("created", "modified"):
+        raw = getattr(props, name)
+        if raw is None:
+            continue
+        try:
+            parsed = datetime.fromisoformat(raw)
+        except ValueError as exc:
+            raise ValueError(f"{name} 不是合法的 ISO 8601 时间：{raw!r}") from exc
+        setattr(cp, name, parsed)
+
+
 def _add_section_item(doc, item: SectionItem, default_font: FontConfig | None):
-    """向文档添加一个内容块"""
-    from .models import ParagraphStyle as PS
-
-    t = item.type
-
-    if t == "heading":
-        level = item.level or 1
-        p = doc.add_heading(item.text or "", level=level)
-        # 应用段落样式
-        if item.style:
-            _apply_paragraph_format(p, item.style)
-        # heading 也应用默认字体（重置颜色为黑色，避免 python-docx 内置 heading 的蓝色主题色）
-        if default_font and p.runs:
-            for run in p.runs:
-                _apply_font(run, default_font.name, default_font.size, color="000000")
-
-    elif t == "paragraph":
-        p = doc.add_paragraph()
-        style = item.style or PS()
-        s_font = style.font_name or (default_font.name if default_font else None)
-        s_size = style.font_size or (default_font.size if default_font else None)
-        _add_text_runs(p, item.text or "", s_font, s_size, style.bold, style.italic, style.color)
-        _apply_paragraph_format(p, style)
-
-    elif t == "table":
-        from .models import TableDef
-        td = item.table or TableDef()
-        rows = len(td.rows) + (1 if td.headers else 0)
-        cols = max(len(td.headers) if td.headers else 0,
-                   max((len(r) for r in td.rows), default=0))
-        if rows == 0 or cols == 0:
-            logger.warning("跳过空表格（rows=%d, cols=%d）", rows, cols)
-            return
-
-        table = doc.add_table(rows=rows, cols=cols)
-        table.style = "Table Grid"
-
-        # 表头
-        if td.headers:
-            for i, h in enumerate(td.headers):
-                cell = table.rows[0].cells[i]
-                cell.text = str(h)
-                if td.header_style:
-                    hs = td.header_style
-                    for p in cell.paragraphs:
-                        for run in p.runs:
-                            _apply_font(run, hs.font_name, hs.font_size,
-                                        True if hs.bold is None else hs.bold, False, hs.font_color)
-                    if hs.bg_color:
-                        shading = parse_xml(
-                            f'<w:shd {nsdecls("w")} w:fill="{hs.bg_color}"/>'
-                        )
-                        cell._element.get_or_add_tcPr().append(shading)
-
-        # 数据行
-        for ri, row_data in enumerate(td.rows):
-            row_idx = ri + (1 if td.headers else 0)
-            for ci, val in enumerate(row_data):
-                if ci < cols:
-                    cell = table.rows[row_idx].cells[ci]
-                    cell.text = str(val)
-
-        # 列宽
-        if td.column_widths:
-            for row in table.rows:
-                for ci, w in enumerate(td.column_widths):
-                    if ci < len(row.cells):
-                        row.cells[ci].width = Inches(w)
-
-        # 合并单元格
-        if td.merged_cells:
-            for mc in td.merged_cells:
-                try:
-                    start_cell_str, end_cell_str = mc.range.split(":")
-                    start_col = _col_letter_to_index(start_cell_str)
-                    start_row = int(re.search(r"\d+", start_cell_str).group()) - 1
-                    end_col = _col_letter_to_index(end_cell_str)
-                    end_row = int(re.search(r"\d+", end_cell_str).group()) - 1
-                    table.cell(start_row, start_col).merge(
-                        table.cell(end_row, end_col)
-                    )
-                except (ValueError, IndexError, AttributeError):
-                    logger.warning("无法解析合并范围: %s", mc.range)
-
-    elif t == "image":
-        from .models import ImageDef
-        img = item.image or ImageDef(path="")
-        if os.path.exists(img.path):
-            w = img.width or 4.0
-            h = img.height or None
-            if h:
-                doc.add_picture(img.path, width=Inches(w), height=Inches(h))
-            else:
-                doc.add_picture(img.path, width=Inches(w))
-        else:
-            logger.warning("图片路径不存在，已跳过: %s", img.path)
-
-    elif t == "page_break":
-        doc.add_page_break()
-
-    elif t == "bullet_list":
-        if item.items:
-            for li in item.items:
-                p = doc.add_paragraph(li, style="List Bullet")
-                if default_font and p.runs:
-                    _apply_font(p.runs[0], default_font.name, default_font.size)
-
-    elif t == "numbered_list":
-        if item.items:
-            for li in item.items:
-                p = doc.add_paragraph(li, style="List Number")
-                if default_font and p.runs:
-                    _apply_font(p.runs[0], default_font.name, default_font.size)
-
-    elif t == "code":
-        p = doc.add_paragraph()
-        run = p.add_run(item.text or "")
-        _apply_font(run, "Consolas", 10, False, False, "1E1E1E")
-        # 应用段落样式
-        if item.style:
-            _apply_paragraph_format(p, item.style)
-        # 灰色背景阴影 - 使用 nil 而非 clear 以确保渲染
-        shading = parse_xml(f'<w:shd {nsdecls("w")} w:fill="F5F5F5" w:val="nil"/>')
-        p._element.get_or_add_pPr().append(shading)
+    """向文档添加一个内容块（兼容旧调用，委托场景感知版本）。"""
+    _add_section_item_scene(doc, item, default_font, {})
 
 
 def create_word_document(
@@ -393,7 +372,11 @@ def create_word_document(
         for item in content.sections:
             _add_section_item_scene(doc, item, effective_font, scene_data)
 
-        atomic_save(doc.save, resolved_path)
+        # 核心属性在保存前写入
+        if content.properties is not None:
+            _apply_core_properties(doc, content.properties)
+
+        backup_path = atomic_save(doc.save, resolved_path)
         size = get_file_size(resolved_path)
         scene_msg = f"（场景: {scene}）" if scene else ""
         cover_msg = "+封面" if (should_show_cover or has_cover_config) else ""
@@ -404,6 +387,7 @@ def create_word_document(
             file_path=resolved_path,
             file_size=size,
             message=f"Word 文档创建成功: {resolved_path}{scene_msg}{'（含封面）' if (should_show_cover or has_cover_config) else ''}",
+            backup_path=backup_path,
         )
     except Exception as e:
         # 输入校验错误会直接返回给 MCP 调用方；无需把预期错误刷成完整堆栈，
@@ -448,13 +432,14 @@ def edit_word_document(
         for item in append_sections:
             _add_section_item(doc, item, default_font)
             count += 1
-        atomic_save(doc.save, file_path)
+        backup_path = atomic_save(doc.save, file_path)
         logger.info("已追加 %d 个内容块到 Word 文档: %s", count, file_path)
         return EditResult(
             success=True,
             file_path=file_path,
             operation_count=count,
             message=f"已追加 {count} 个内容块到 Word 文档",
+            backup_path=backup_path,
         )
     except Exception as e:
         logger.error("编辑 Word 文档失败: %s", e, exc_info=True)
@@ -700,6 +685,8 @@ def _add_section_item_scene(doc, item: SectionItem, default_font, scene_data: di
                         alignment=profile.alignment,
                         line_spacing=profile.line_spacing,
                     ))
+                elif default_font and p.runs:
+                    _apply_font(p.runs[0], default_font.name, default_font.size)
 
     elif t == "numbered_list":
         if item.items:
@@ -710,6 +697,8 @@ def _add_section_item_scene(doc, item: SectionItem, default_font, scene_data: di
                         alignment=profile.alignment,
                         line_spacing=profile.line_spacing,
                     ))
+                elif default_font and p.runs:
+                    _apply_font(p.runs[0], default_font.name, default_font.size)
 
     elif t == "code":
         p = doc.add_paragraph()
@@ -765,3 +754,17 @@ def _add_section_item_scene(doc, item: SectionItem, default_font, scene_data: di
         """添加分节符（新页开始）"""
         doc.add_section()
         logger.debug("添加分节符")
+
+    elif t == "hyperlink":
+        from .models import HyperlinkDef as HD
+        p = _add_hyperlink_paragraph(
+            doc, item.hyperlink or HD(text="", url=""), default_font
+        )
+        if item.style:
+            _apply_paragraph_format(p, item.style)
+
+    elif t == "field":
+        from .models import FieldDef as FD
+        p = _add_field_paragraph(doc, item.field or FD())
+        if item.style:
+            _apply_paragraph_format(p, item.style)

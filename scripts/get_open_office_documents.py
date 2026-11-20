@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 
 import _common as common
+import _native as native
 from office_engine.office_com import get_open_office_documents
 
 TOOL = "get_open_office_documents"
@@ -17,6 +18,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run(args):
+    params = common.parse_params(args)
+    if native.use_csharp(TOOL):
+        return native.run_entry_from_args(TOOL, args, params)
     result = common.with_timeout(
         get_open_office_documents,
         common.COM_OPERATION_TIMEOUT,

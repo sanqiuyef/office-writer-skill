@@ -9,7 +9,7 @@ cd <本项目目录>
 python -X utf8 -m unittest discover -s tests -v
 ```
 
-本轮结果：**42 项通过，0 跳过**。覆盖：
+本轮结果：**默认 C# 58 项通过、2 项跳过；`OFFICE_NATIVE_ENGINE=python` 58 项通过**。覆盖：
 
 - 11 个固定用例的 `data` 全量比对（读取、结构化读取、inspect、validate、模板分析、配色列表）；
 - 32 个入口逐个 `--help`，全部退出 0；
@@ -27,6 +27,7 @@ python -X utf8 -m unittest discover -s tests -v
 - 缺 dsoffice 回退：`MODULE_OFFICE_DSOFFICE` 指向不存在路径时，docx 经 COM 转 PDF；docx 渲染经 COM+PyMuPDF 出 PNG，`page_count` 与 PNG 数一致；
 - Word 域 XML 兼容：生成的 report/TOC 文档中 `fldChar`/`instrText` 均包在 `w:r` 中，`pBdr` 位于 `spacing/ind/jc` 之前；
 - 扫描件 OCR：Pillow 生成图片 PDF，经 `OFFICE_TESSERACT_CMD` 调用真实 Tesseract；
+- P2 回归（`test_native_p2.py`，固定走 C#）：Excel 日期读取与 `max_rows_per_sheet` 流式截断、批量写合并区非锚点被拒绝且文件不变、PPT 图表含 `c:externalData` 与 embedded xlsx、Word Header/Footer 样式与 `nextPage` 分节；
 - stdout 单 JSON 对象、`--params-file`。
 
 有意改变固定 CLI 行为后重新生成期望值（parity golden 保持静态）：

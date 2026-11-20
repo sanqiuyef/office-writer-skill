@@ -1,6 +1,8 @@
 # Office Writer
 
-把 mcp-office-writer 0.6.0 的 32 个文档工具拆成 32 个独立 CLI 入口。每个入口只做参数解析、Pydantic 校验和 JSON 输出，文档逻辑来自 `scripts/office_engine/` 的 vendored 引擎。skill 不依赖 MCP，不启动 MCP 服务。
+把 mcp-office-writer 0.6.0 的 32 个文档工具拆成 32 个独立 CLI 入口，另加 12 个本地入口：5 个 Python 入口（活动文档替换、Word 批注/属性、Excel 图表、PPT 超链接）与 7 个 office-native 原生入口（Word 修订/脚注/内容控件、PPT 动画切换批注/SmartArt、Excel 透视表/打印），共 44 个入口。44 个入口默认由 C# `tools/office-native` 执行（Open XML SDK + Office COM）；`OFFICE_NATIVE_ENGINE=python` 可回退到 `scripts/office_engine/` 的 vendored 引擎做对照或排障。每个入口只做参数解析、契约校验和 JSON 输出。C# 后端构建：`pwsh -File tools/office-native/build.ps1`。skill 不依赖 MCP，不启动 MCP 服务。
+
+Word / Excel / PPT 的逐项功能面与覆盖状态见 `references/capabilities_word.md`、`capabilities_excel.md`、`capabilities_ppt.md`（2026-11 扩展）。
 
 ## 安装
 
@@ -27,6 +29,15 @@ pip install -r requirements.txt
 - 所有入口默认 UTF-8 stdio；`--help` 正常打印帮助，其他情况 stdout 只输出 JSON。
 - `config/defaults.json` 可调超时和渲染默认 DPI；同名环境变量见 `.env.example`。
 
+## 写入安全
+
+- 所有写文件的入口默认 `--if-exists error`：目标已存在且非空时拒绝写入，退出码 2，不触碰原文件。
+- 空白文件（不存在或大小为 0）可直接写入，用于新建和占位符场景。
+- 确需覆盖时同时传 `--if-exists overwrite --confirm-overwrite`；需要保留旧文件时用 `--if-exists rename`。
+- 原地写回（`edit_*`、`batch_edit_office_document`、PPT 配色/布局/清理）在替换前自动生成 `*.bak-YYYYmmdd-HHMMSS` 备份，路径在 `data.backup_path`（或 `backup_path` 字段）返回。
+- PDF 生成、PDF 转换、页面渲染覆盖已有目标时同样先备份；目录目标整体改名为 `.bak-*`，不删除旧内容。
+- 已打开的文档优先走 COM 入口，由应用自己保存，保留公式、修订、批注、域和嵌入对象。
+
 ## 隐私
 
 - 文档只在本机读写；不发送到任何 API，不上传遥测。
@@ -36,11 +47,19 @@ pip install -r requirements.txt
 
 ## 测试
 
+默认走 C# 后端：
+
 ```bash
 python -X utf8 -m unittest discover -s tests -v
 ```
 
-本轮 **42 项通过、0 跳过**。覆盖 32 个入口 `--help`、固定输出全量比对、退出码 1/2/3、创建→读取→校验往返、结构/触发基线、字体回退、渲染计数修正、批量备份、PPT 越界/重叠审计与 `--reflow`、dsoffice 与真实 Office/WPS COM 转换/重算、COM 缺失回退、17 项 validate 实检 fixture、扫描件 OCR。有意改固定 CLI 行为后先运行：
+回退 Python 引擎对照：
+
+```bash
+OFFICE_NATIVE_ENGINE=python python -X utf8 -m unittest discover -s tests -v
+```
+
+2026-11-20 实测：默认 C# 套件 **58 项通过、2 项跳过**；`OFFICE_NATIVE_ENGINE=python` 套件 **58 项全通过**。跳过项是 fake dsoffice 的 `.cmd` shim 在当前沙箱无法启动 `cmd.exe`（普通 Windows 终端可执行）。覆盖 44 个入口 `--help`、固定输出全量比对、退出码 1/2/3、创建→读取→校验往返、结构/触发基线、字体回退、渲染计数修正、批量备份、PPT 越界/重叠审计与 `--reflow`、dsoffice 与真实 Office/WPS COM 转换/重算、COM 缺失回退、17 项 validate 实检 fixture、扫描件 OCR、覆盖闸门，以及 4 项 P2 回归（Excel 日期/流式读取、批量合并区、PPT 图表内嵌工作簿、Word 页眉样式与分节）。有意改固定 CLI 行为后先运行：
 
 ```bash
 python -X utf8 tests/update_expected.py
@@ -48,21 +67,12 @@ python -X utf8 tests/update_expected.py
 
 真实执行记录、转换/渲染结果与遗留问题见 `tests/README.md`。
 
-## 验证记录（2026-11-15）
-
-- 全量测试：42 项通过、0 跳过。32 个入口 `--help` 全部退出 0。
-- dsoffice：docx/xlsx/pptx → PDF 均退出 0；docx 报告 `Courier` 缺失，回退建议 `Consolas`。
-- COM：docx→`Word.Application`、xlsx→`Excel.Application`、pptx→`PowerPoint.Application` 均退出 0；`com_engine=office`。WPS `KWps/KET/KWPP` 也实测可导出。
-- 渲染回退：`MODULE_OFFICE_DSOFFICE` 指向不存在路径时，docx 先经 COM 转 PDF 再由 PyMuPDF 出图；`--pages 1 --dpi 144` 生成 1191×1684 PNG，`page_count=1`。
-- 公式重算：`OFFICE_CONVERT_BACKEND=com` 走 `CalculateFullRebuild`+`Save`，回读合计列 `255/390`。
-- validate：干净 fixture 17/17 通过；问题 fixture 命中 8 类 warning（字体、标题层级/编号、PAGE、TOC、表格列、空段落、中英混排）；TOC 未标脏 fixture 单独命中。
-- reflow：越界、重叠、混合、超大四类形状重排后 `remaining_warning_count=0`；例如重叠形状 B 从 `(3.0,2.0)` 移到 `(3.0,3.15)`，越界形状 C 从 `(9.0,6.0)` 移到 `(6.9,5.4)`。
-- 每次 COM 调用后等待 Quit；测试断言无残留 `WINWORD/EXCEL/POWERPNT` 进程。
+历史验证记录（2026-11-15/19：COM 转换、validate 17 项、reflow、覆盖闸门与能力扩展）见 git 历史与 `tests/README.md`。
 
 ## 维护
 
 - `scripts/office_engine/*.py` 是 mcp-office-writer 0.6.0（2026-11）的 vendored 副本；每个文件头写明上游路径、版本和修改点。升级上游时整包替换并同步 `tests/test_parity.py` 的 golden。
-- 本 skill 对引擎的增量：转换/渲染/重算回退链与 COM、17 项 validate 实检、PPT `reflow_slide_layout`、Word 域 XML 与封面边框顺序修正。
+- 本 skill 对引擎的增量：转换/渲染/重算回退链与 COM、17 项 validate 实检、PPT `reflow_slide_layout`、Word 域 XML 与封面边框顺序修正；2026-11 扩展 Word 超链接/通用域/文档属性、Excel 图表/条件格式/数据验证/超级表/名称/批注/图片/页面设置、PPT 表格与图表几何/图片裁剪/真列表/双栏占位符/`.potx`；44 个入口已全量迁移到 C# `tools/office-native/`（Open XML SDK + COM，默认引擎），旧 Python 引擎保留为 `OFFICE_NATIVE_ENGINE=python` 对照（源码在 `tools/office-native/`，二进制构建后放 `dist/`，不提交）。
 - 入口脚本只保留 `build_parser()`/`run(args)`/`main()`；共享契约在 `scripts/_common.py`。新增能力应新增 1:1 入口，不把逻辑塞进 `_common.py`。
 - 素材：`templates/` 起步模板、`assets/examples/` 合成示例、`references/` 主题文档。模板/示例改动后跑测试与一次渲染验收。
 - 超时/DPI 默认值在 `config/defaults.json`；不要把密钥或机器绝对路径写进配置。
@@ -77,6 +87,8 @@ python -X utf8 tests/update_expected.py
 - PDF 转换是 dsoffice/LibreOffice 或 Office/WPS 的近似还原，不承诺与打印逐像素一致。
 - 扫描件 OCR 依赖本机 Tesseract；未安装时降级返回文本层并在 `message` 说明。
 - 文件被 Office 占用、损坏 OOXML、加密文档等由底层库报错；CLI 统一转成 JSON 错误，不自动修复源文件。
+- 2026-11-20 已补齐：Excel 日期/时间读取与流式读取、合并区批量写入保护、图表/图片/批注锚点边界、活动 Excel 复用、模板公式与名称清理；Word Header/Footer 样式、嵌套/行级修订、跨 run track-delete、原子写回；PPT 图表内嵌数据工作簿、`a:br`/`a:fld` 文本语义、跨 slide 关系迁移。
+- 仍未封装：Excel 真实排序/形状/迷你图/保护/加密/Power Query；Word 书签/邮件合并/比较合并/打印/分栏/浮动图片；PPT 母版/节/放映设置/媒体跨页移动/视频导出。
 
 ## 许可
 

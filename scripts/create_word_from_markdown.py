@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 
 import _common as common
+import _native as native
 from office_engine.markdown_writer import create_word_from_markdown
 from office_engine.models import CreateResult
 
@@ -18,21 +19,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-path", dest="output_path")
     parser.add_argument("--template")
     parser.add_argument("--scene")
-    parser.add_argument("--if-exists", dest="if_exists")
+    common.add_overwrite_flags(parser)
     return parser
 
 
 def run(args):
     params = common.parse_params(args)
+    if native.use_csharp(TOOL):
+        return native.run_entry_from_args(TOOL, args, params)
     source_path = common.arg(args, params, "source_path", required=True)
     output_path = common.arg(args, params, "output_path", required=True)
     template = common.arg(args, params, "template")
     scene = common.arg(args, params, "scene", "report")
-    if_exists = common.choice(
-        common.arg(args, params, "if_exists", "overwrite"),
-        {"overwrite", "error", "rename"},
-        "if_exists",
-    )
+    if_exists = common.output_policy(args, params, output_path)
     timeout_result = CreateResult(
         success=False,
         file_path=output_path,

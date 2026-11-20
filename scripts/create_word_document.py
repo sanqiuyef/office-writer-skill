@@ -6,7 +6,8 @@ from __future__ import annotations
 import argparse
 
 import _common as common
-from office_engine.models import FontConfig, HeaderFooter, PageSetup, WordContent
+import _native as native
+from office_engine.models import CoverConfig, FontConfig, HeaderFooter, PageSetup, WordContent
 from office_engine.word_writer import create_word_document
 
 TOOL = "create_word_document"
@@ -17,12 +18,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-path", dest="output_path")
     parser.add_argument("--template")
     parser.add_argument("--scene")
-    parser.add_argument("--if-exists", dest="if_exists")
+    common.add_overwrite_flags(parser)
     return parser
 
 
 def run(args):
     params = common.parse_params(args)
+    if native.use_csharp(TOOL):
+        return native.run_entry_from_args(TOOL, args, params)
     output_path = common.arg(args, params, "output_path", required=True)
     content = common.model_arg(params, "content", WordContent)
     template = common.arg(args, params, "template")
@@ -30,14 +33,9 @@ def run(args):
     header_footer = common.model_arg(params, "header_footer", HeaderFooter, required=False)
     default_font = common.model_arg(params, "default_font", FontConfig, required=False)
     scene = common.arg(args, params, "scene")
-    cover_config = params.get("cover_config")
-    if cover_config is not None and not isinstance(cover_config, dict):
-        raise common.UsageError("cover_config 必须是 JSON 对象")
-    if_exists = common.choice(
-        common.arg(args, params, "if_exists", "overwrite"),
-        {"overwrite", "error", "rename"},
-        "if_exists",
-    )
+    cover = common.model_arg(params, "cover_config", CoverConfig, required=False)
+    cover_config = cover.model_dump(exclude_none=True) if cover else None
+    if_exists = common.output_policy(args, params, output_path)
     result = create_word_document(
         output_path,
         content,

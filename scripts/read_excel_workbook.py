@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 
 import _common as common
+import _native as native
 from office_engine.reader import read_excel_workbook
 
 TOOL = "read_excel_workbook"
@@ -21,6 +22,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run(args):
     params = common.parse_params(args)
+    if native.use_csharp(TOOL):
+        return native.run_entry_from_args(TOOL, args, params)
     file_path = common.arg(args, params, "file_path", required=True)
     max_rows_per_sheet = common.int_arg(args, params, "max_rows_per_sheet", 1000)
     max_chars = common.int_arg(args, params, "max_chars", 50000)

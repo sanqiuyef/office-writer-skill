@@ -46,6 +46,18 @@ ENTRY_SCRIPTS = {
     "validate_word_document.py",
     "merge_office_template.py",
     "batch_edit_office_document.py",
+    "replace_open_document_content.py",
+    "word_manage_comments.py",
+    "word_set_properties.py",
+    "excel_add_chart.py",
+    "ppt_set_hyperlinks.py",
+    "word_manage_revisions.py",
+    "word_manage_footnotes.py",
+    "word_manage_content_controls.py",
+    "ppt_manage_effects.py",
+    "ppt_manage_smartart.py",
+    "excel_manage_pivots.py",
+    "excel_print.py",
 }
 
 REQUIRED_TOP_LEVEL = {
@@ -165,8 +177,11 @@ class StructureTest(unittest.TestCase):
             "template_merge", "guards", "utils", "checker", "scenes", "covers",
             "office_com",
         }
+        # open_replace 是本地模块（借鉴 unpack→edit→zip 思路，活动文档走 COM），
+        # 不是 vendored 副本，因此不要求 mcp_office_writer 文件头。
+        local = {"open_replace"}
         modules = {path.stem for path in ENGINE.glob("*.py") if path.name != "__init__.py"}
-        self.assertEqual(modules, expected)
+        self.assertEqual(modules, expected | local)
         for name in sorted(expected):
             with self.subTest(module=name):
                 lines = (ENGINE / f"{name}.py").read_text(encoding="utf-8").splitlines()[:3]
@@ -232,8 +247,10 @@ class StructureTest(unittest.TestCase):
 
     def test_license_notices(self) -> None:
         body = (ROOT / "LICENSE").read_text(encoding="utf-8")
-        for marker in ("MIT License", "Third-party notices", "PyMuPDF", "AGPL-3.0", "fpdf2", "LGPL-3.0"):
-            self.assertIn(marker, body)
+        self.assertIn("MIT License", body)
+        notices = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
+        for marker in ("Third-party notices", "PyMuPDF", "AGPL-3.0", "fpdf2", "LGPL-3.0"):
+            self.assertIn(marker, notices)
 
     def test_readme_length(self) -> None:
         lines = (ROOT / "README.md").read_text(encoding="utf-8").splitlines()

@@ -263,6 +263,81 @@ def choice(value: Any, allowed: set[str] | tuple[str, ...], name: str) -> str:
     return text
 
 
+OVERWRITE_MODES = ("error", "overwrite", "rename")
+
+
+def add_overwrite_flags(
+    parser: argparse.ArgumentParser,
+    *,
+    default: str = "error",
+    allowed: tuple[str, ...] = OVERWRITE_MODES,
+) -> None:
+    """Add the shared output-exists policy and the explicit overwrite confirmation."""
+    parser.add_argument(
+        "--if-exists",
+        dest="if_exists",
+        choices=list(allowed),
+        default=None,
+        help=(
+            "目标已存在时：error 拒绝（默认）；rename 自动改名；"
+            "overwrite 覆盖，但非空文件必须同时加 --confirm-overwrite"
+        ),
+    )
+    parser.add_argument(
+        "--confirm-overwrite",
+        dest="confirm_overwrite",
+        action="store_true",
+        help="确认覆盖已存在且非空的目标；只有与 --if-exists overwrite 同用才放行",
+    )
+
+
+def guard_output(
+    target_path: str,
+    mode: str,
+    confirm_overwrite: bool = False,
+) -> None:
+    """Refuse to overwrite a non-empty target unless explicitly confirmed.
+
+    Blank files and empty directories count as writable: they are placeholders,
+    not user work. ``rename`` never destroys anything, so it passes.
+    """
+    path = Path(target_path)
+    if not path.exists():
+        return
+    try:
+        non_empty = any(path.iterdir()) if path.is_dir() else path.stat().st_size > 0
+    except OSError as exc:
+        raise ToolRuntimeError(f"无法检查目标文件 {path}：{exc}") from exc
+    if not non_empty:
+        return
+    if mode == "rename":
+        return
+    if mode == "overwrite" and confirm_overwrite:
+        return
+    raise UsageError(
+        f"拒绝复写：目标已存在且非空 {path}。默认只允许写空白文件或新建文件；"
+        "确需覆盖请同时传 --if-exists overwrite --confirm-overwrite，"
+        "需要保留旧文件请用 --if-exists rename。"
+    )
+
+
+def output_policy(
+    args: argparse.Namespace,
+    params: dict[str, Any],
+    target_path: str,
+    *,
+    default: str = "error",
+    allowed: tuple[str, ...] = OVERWRITE_MODES,
+) -> str:
+    """Resolve if_exists, apply the overwrite gate, and return the engine mode."""
+    mode = choice(arg(args, params, "if_exists", default), set(allowed), "if_exists")
+    confirm = bool(
+        getattr(args, "confirm_overwrite", False) or params.get("confirm_overwrite")
+    )
+    guard_output(target_path, mode, confirm)
+    return mode
+
+
 def result_data(result: Any) -> dict[str, Any]:
     """Convert a Pydantic result or dict into a JSON-safe data object."""
     if isinstance(result, BaseModel):

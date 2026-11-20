@@ -1,6 +1,6 @@
 # Vendored from mcp_office_writer/office_convert.py (mcp-office-writer 0.6.0, 2026-11).
 # Upstream path: mcp_office_writer/office_convert.py (repository-relative).
-# Modifications: xlsx/xls render uses sheet + A1 range and omits --pages, matching dsoffice's spreadsheet interface; added monospace font fallback reporting (font_substitutions) on convert; resolve dsoffice before deleting existing outputs; added OFFICE_CONVERT_BACKEND selection with Microsoft Office/WPS COM fallback for PDF conversion, page rendering and Excel recalculation, including PyMuPDF rendering and process cleanup.
+# Modifications: xlsx/xls render uses sheet + A1 range and omits --pages, matching dsoffice's spreadsheet interface; added monospace font fallback reporting (font_substitutions) on convert; resolve dsoffice before deleting existing outputs; added OFFICE_CONVERT_BACKEND selection with Microsoft Office/WPS COM fallback for PDF conversion, page rendering and Excel recalculation, including PyMuPDF rendering and process cleanup; existing file/directory targets are backed up (or renamed aside) before replacement instead of being deleted.
 """Office 文档转换、渲染与公式重算。
 
 三种后端按 ``OFFICE_CONVERT_BACKEND`` 选择（默认 ``auto``）：
@@ -30,6 +30,7 @@ import time
 from pathlib import Path
 
 from .utils import (
+    backup_target,
     ensure_output_dir,
     resolve_if_exists,
     validate_input_file,
@@ -316,6 +317,10 @@ def _run_dsoffice(cli_path: str, args: list[str], timeout: float) -> dict:
         RuntimeError: 进程失败、超时或输出不是合法 JSON。
     """
     cmd = [cli_path, *args]
+    # npm 在 Windows 上安装的是 dsoffice.cmd shim；subprocess 直接启动
+    # .cmd 会挂起，必须经 cmd.exe /c 转发。
+    if os.name == "nt" and Path(cli_path).suffix.lower() in {".cmd", ".bat"}:
+        cmd = [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", *cmd]
     try:
         proc = subprocess.run(
             cmd,
@@ -363,19 +368,30 @@ def _temp_file_near(target: Path, prefix: str) -> Path:
     return Path(name)
 
 
+def _aside_path(target: Path) -> Path:
+    """Pick a non-existent ``*.bak-YYYYmmdd-HHMMSS`` sibling for the old target."""
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    candidate = target.with_name(f"{target.name}.bak-{stamp}")
+    counter = 1
+    while candidate.exists():
+        candidate = target.with_name(f"{target.name}.bak-{stamp}-{counter}")
+        counter += 1
+    return candidate
+
+
 def _replace_file(temp: Path, target: Path) -> None:
-    """Atomically replace a file target; only a directory target is removed first."""
+    """Atomically replace a file target; keep the old file as a timestamped backup."""
     if target.is_dir():
-        shutil.rmtree(target)
+        os.replace(target, _aside_path(target))
+    elif target.is_file() and target.stat().st_size > 0:
+        backup_target(str(target))
     os.replace(temp, target)
 
 
 def _replace_dir(temp: Path, target: Path) -> None:
+    """Replace a directory target; rename the old one aside instead of deleting it."""
     if target.exists() or target.is_symlink():
-        if target.is_dir():
-            shutil.rmtree(target)
-        else:
-            target.unlink()
+        os.replace(target, _aside_path(target))
     os.replace(temp, target)
 
 

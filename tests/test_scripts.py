@@ -150,6 +150,29 @@ REQUIRES_COM = unittest.skipUnless(
     com_is_available(), "需要 Windows + pywin32 + Microsoft Office/WPS"
 )
 
+PYTHON_ENGINE = os.environ.get("OFFICE_NATIVE_ENGINE", "").strip().lower() in {
+    "python", "legacy", "py",
+}
+CSHARP_ENGINE = not PYTHON_ENGINE
+
+
+def _cmd_shim_available() -> bool:
+    """沙箱可能禁止启动 cmd.exe；此时 fake dsoffice 的 .cmd shim 无法验证。"""
+    if os.name != "nt":
+        return True
+    try:
+        proc = subprocess.run(
+            [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/c", "exit", "0"],
+            capture_output=True,
+            timeout=10,
+        )
+        return proc.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+CMD_SHIM_AVAILABLE = _cmd_shim_available()
+
 ENTRY_SCRIPTS = [
     "create_word_document.py",
     "edit_word_document.py",
@@ -183,6 +206,18 @@ ENTRY_SCRIPTS = [
     "validate_word_document.py",
     "merge_office_template.py",
     "batch_edit_office_document.py",
+    "replace_open_document_content.py",
+    "word_manage_comments.py",
+    "word_set_properties.py",
+    "excel_add_chart.py",
+    "ppt_set_hyperlinks.py",
+    "word_manage_revisions.py",
+    "word_manage_footnotes.py",
+    "word_manage_content_controls.py",
+    "ppt_manage_effects.py",
+    "ppt_manage_smartart.py",
+    "excel_manage_pivots.py",
+    "excel_print.py",
 ]
 
 
@@ -298,6 +333,97 @@ class ScriptContractTest(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout)["data"]["scheme"], "modern-dark")
+
+    def test_overwrite_gate_refuses_non_empty_target(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="office_writer_gate_") as tmp:
+            target = Path(tmp) / "existing.docx"
+            shutil.copy2(FIXTURES / "sample.docx", target)
+            before = target.read_bytes()
+            params = {"content": {"sections": [{"type": "paragraph", "text": "新内容"}]}}
+            result = run_script(
+                "create_word_document.py",
+                ["--output-path", str(target), "--params", json_arg(params)],
+            )
+            self.assertEqual(result.returncode, 2, result.stderr)
+            payload = json.loads(result.stdout)
+            self.assertFalse(payload["ok"])
+            self.assertIn("拒绝复写", payload["error"])
+            self.assertEqual(target.read_bytes(), before)
+
+    def test_overwrite_gate_allows_blank_target(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="office_writer_blank_") as tmp:
+            target = Path(tmp) / "blank.docx"
+            target.write_bytes(b"")
+            params = {"content": {"sections": [{"type": "paragraph", "text": "空白文件内容"}]}}
+            result = run_script(
+                "create_word_document.py",
+                ["--output-path", str(target), "--params", json_arg(params)],
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertGreater(target.stat().st_size, 0)
+
+    def test_confirmed_overwrite_creates_backup(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="office_writer_confirm_") as tmp:
+            target = Path(tmp) / "overwrite.docx"
+            shutil.copy2(FIXTURES / "sample.docx", target)
+            before = target.read_bytes()
+            params = {"content": {"sections": [{"type": "paragraph", "text": "覆盖后的内容"}]}}
+            result = run_script(
+                "create_word_document.py",
+                [
+                    "--output-path", str(target),
+                    "--if-exists", "overwrite",
+                    "--confirm-overwrite",
+                    "--params", json_arg(params),
+                ],
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            backups = list(Path(tmp).glob("overwrite.docx.bak-*"))
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(backups[0].read_bytes(), before)
+
+    def test_edit_creates_backup(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="office_writer_editbak_") as tmp:
+            target = Path(tmp) / "edit.docx"
+            shutil.copy2(FIXTURES / "sample.docx", target)
+            before = target.read_bytes()
+            params = {"append_sections": [{"type": "paragraph", "text": "备份验证。"}]}
+            result = run_script(
+                "edit_word_document.py",
+                ["--file-path", str(target), "--params", json_arg(params)],
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            backup = json.loads(result.stdout)["data"].get("backup_path")
+            self.assertTrue(backup and Path(backup).is_file())
+            self.assertEqual(Path(backup).read_bytes(), before)
+
+    def test_replace_helpers_backup_existing_target(self) -> None:
+        sys.path.insert(0, str(SCRIPTS))
+        from office_engine.office_convert import _replace_dir, _replace_file
+
+        with tempfile.TemporaryDirectory(prefix="office_writer_replace_") as tmp:
+            work = Path(tmp)
+            target = work / "out.pdf"
+            target.write_bytes(b"old-file")
+            temp_file = work / "new.tmp"
+            temp_file.write_bytes(b"new-file")
+            _replace_file(temp_file, target)
+            self.assertEqual(target.read_bytes(), b"new-file")
+            file_backups = list(work.glob("out.pdf.bak-*"))
+            self.assertEqual(len(file_backups), 1)
+            self.assertEqual(file_backups[0].read_bytes(), b"old-file")
+
+            target_dir = work / "pages"
+            target_dir.mkdir()
+            (target_dir / "1.png").write_bytes(b"old-page")
+            temp_dir = work / "new-pages"
+            temp_dir.mkdir()
+            (temp_dir / "1.png").write_bytes(b"new-page")
+            _replace_dir(temp_dir, target_dir)
+            self.assertEqual((target_dir / "1.png").read_bytes(), b"new-page")
+            dir_backups = list(work.glob("pages.bak-*"))
+            self.assertEqual(len(dir_backups), 1)
+            self.assertEqual((dir_backups[0] / "1.png").read_bytes(), b"old-page")
 
     def test_create_read_roundtrip(self) -> None:
         with tempfile.TemporaryDirectory(prefix="office_writer_roundtrip_") as tmp:
@@ -491,6 +617,8 @@ class ScriptContractTest(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout)["data"]["slides_count"], 1)
 
 
+    @unittest.skipIf(CSHARP_ENGINE, "fake dsoffice 仅用于 Python 引擎")
+    @unittest.skipUnless(CMD_SHIM_AVAILABLE, "当前环境禁止启动 cmd.exe，无法执行 .cmd shim")
     def test_render_page_count_uses_actual_artifacts(self) -> None:
         with tempfile.TemporaryDirectory(prefix="office_writer_render_") as tmp:
             work = Path(tmp)
@@ -512,6 +640,8 @@ class ScriptContractTest(unittest.TestCase):
             self.assertEqual(data["page_count"], len(pngs))
             self.assertIn("按实际产物修正", data["message"])
 
+    @unittest.skipIf(CSHARP_ENGINE, "fake dsoffice 仅用于 Python 引擎")
+    @unittest.skipUnless(CMD_SHIM_AVAILABLE, "当前环境禁止启动 cmd.exe，无法执行 .cmd shim")
     def test_convert_font_substitutions(self) -> None:
         sys.path.insert(0, str(SCRIPTS))
         from office_engine.office_convert import plan_font_substitutions
@@ -677,7 +807,12 @@ class ScriptContractTest(unittest.TestCase):
             output.write_bytes(b"existing-output")
             result = run_script(
                 "convert_to_pdf.py",
-                ["--input-path", str(source), "--output-path", str(output)],
+                [
+                    "--input-path", str(source),
+                    "--output-path", str(output),
+                    "--if-exists", "overwrite",
+                    "--confirm-overwrite",
+                ],
                 env={
                     "MCP_OFFICE_DSOFFICE": "",
                     "MODULE_OFFICE_DSOFFICE": "",
@@ -898,7 +1033,7 @@ class ScriptContractTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             data = json.loads(result.stdout)["data"]
             pngs = sorted(pages_dir.glob("*.png"))
-            self.assertEqual(data["backend"], "com+pymupdf")
+            self.assertIn(data["backend"], {"com+pymupdf", "com+pdfium"})
             self.assertEqual(data["page_count"], len(pngs))
             self.assertEqual(data["page_count"], 1)
             self.assertEqual(len(data["images"]), 1)

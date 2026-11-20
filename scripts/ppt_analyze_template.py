@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 
 import _common as common
+import _native as native
 from office_engine.ppt_writer import analyze_powerpoint_template
 
 TOOL = "ppt_analyze_template"
@@ -19,6 +20,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run(args):
     params = common.parse_params(args)
+    if native.use_csharp(TOOL):
+        return native.run_entry_from_args(TOOL, args, params)
     file_path = common.arg(args, params, "file_path", required=True)
     result = analyze_powerpoint_template(file_path=file_path)
     common.ensure_success(result)

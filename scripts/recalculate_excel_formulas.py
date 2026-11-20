@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 import _common as common
+import _native as native
 from office_engine.office_convert import recalculate_excel_formulas
 
 TOOL = "recalculate_excel_formulas"
@@ -15,19 +17,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser = common.json_parser(TOOL, "用 LibreOffice 引擎重算 Excel 公式并把缓存值写回。")
     parser.add_argument("--input-path", dest="input_path")
     parser.add_argument("--output-path", dest="output_path")
-    parser.add_argument("--if-exists", dest="if_exists")
+    common.add_overwrite_flags(parser)
     return parser
 
 
 def run(args):
     params = common.parse_params(args)
+    if native.use_csharp(TOOL):
+        return native.run_entry_from_args(TOOL, args, params)
     input_path = common.arg(args, params, "input_path", required=True)
     output_path = common.arg(args, params, "output_path")
-    if_exists = common.choice(
-        common.arg(args, params, "if_exists", "overwrite"),
-        {"overwrite", "error", "rename"},
-        "if_exists",
-    )
+    requested = output_path or str(Path(input_path).with_name(f"{Path(input_path).stem}_recalc{Path(input_path).suffix}"))
+    if_exists = common.output_policy(args, params, requested)
     timeout_result = {
         "success": False,
         "file_path": output_path or input_path,

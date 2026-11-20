@@ -132,7 +132,13 @@ def _inspect_word(file_path: str, budget: _NodeBudget) -> dict[str, Any]:
 def _inspect_excel(file_path: str, budget: _NodeBudget) -> dict[str, Any]:
     from openpyxl import load_workbook
 
-    wb = load_workbook(file_path, read_only=False, data_only=False, keep_vba=file_path.lower().endswith(".xlsm"))
+    wb = load_workbook(
+        file_path,
+        read_only=False,
+        data_only=False,
+        keep_vba=file_path.lower().endswith(".xlsm"),
+        rich_text=True,
+    )
     try:
         root = _node("/", "workbook", format="xlsx")
         budget.count = 1
@@ -807,6 +813,8 @@ def batch_edit_office_document(
     file_path: str,
     operations: list[OfficeOperation | dict[str, Any]],
     output_path: str | None = None,
+    *,
+    backup: bool = True,
 ) -> dict[str, Any]:
     """Apply path-addressed operations as one all-or-nothing atomic transaction."""
     results: list[dict[str, Any]] = []
@@ -832,7 +840,11 @@ def batch_edit_office_document(
             save = document.save
         elif file_format == "xlsx":
             from openpyxl import load_workbook
-            workbook = load_workbook(file_path, keep_vba=file_path.lower().endswith(".xlsm"))
+            workbook = load_workbook(
+                file_path,
+                keep_vba=file_path.lower().endswith(".xlsm"),
+                rich_text=True,
+            )
             def apply(operation: OfficeOperation) -> str:
                 return _apply_excel_operation(workbook, operation)
             save = workbook.save
@@ -873,7 +885,7 @@ def batch_edit_office_document(
                     "error": wrapped.to_dict(),
                 }
 
-        atomic_save(save, target_path)
+        atomic_save(save, target_path, backup=backup)
         return {
             "success": True,
             "file_path": file_path,

@@ -1,6 +1,6 @@
 # Vendored from mcp_office_writer/utils.py (mcp-office-writer 0.6.0, 2026-11).
 # Upstream path: mcp_office_writer/utils.py (repository-relative).
-# Modifications: moved the image download cache from the package parent to assets/image_cache under the skill root using Path(__file__).
+# Modifications: moved the image download cache from the package parent to assets/image_cache under the skill root using Path(__file__); atomic_save now backs up a non-empty existing target before replacing it; resolve_if_exists treats zero-byte files as blank and writable.
 """
 mcp-office-writer 工具函数
 """
@@ -10,6 +10,7 @@ import tempfile
 import logging
 import zipfile
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -95,9 +96,17 @@ def validate_input_file(file_path: str, allowed_suffixes: tuple[str, ...]) -> No
             raise ValueError("Office 文件损坏或不是有效的 OOXML 压缩包") from e
 
 
-def atomic_save(save: Callable[[str], None], file_path: str) -> None:
-    """Save to a sibling temporary file, then atomically replace the target."""
+def atomic_save(save: Callable[[str], None], file_path: str, *, backup: bool = True) -> str | None:
+    """Save to a sibling temporary file, then atomically replace the target.
+
+    When the target already holds content, a ``*.bak-YYYYmmdd-HHMMSS`` copy is
+    made first so an in-place write never silently destroys manual edits.
+    Returns the backup path, or None when no backup was needed.
+    """
     target = Path(file_path)
+    backup_path = None
+    if backup and target.is_file() and target.stat().st_size > 0:
+        backup_path = _backup_file(str(target))
     fd, temp_path = tempfile.mkstemp(
         prefix=f".{target.stem}_", suffix=target.suffix, dir=target.parent
     )
@@ -108,22 +117,41 @@ def atomic_save(save: Callable[[str], None], file_path: str) -> None:
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
+    return backup_path
+
+
+def backup_target(file_path: str) -> str | None:
+    """Back up an existing non-empty file before a non-atomic write.
+
+    Public wrapper used by writers that cannot route through ``atomic_save``
+    (fpdf2 output, LibreOffice/COM conversion targets).
+    """
+    target = Path(file_path)
+    if not target.is_file():
+        return None
+    try:
+        if target.stat().st_size == 0:
+            return None
+    except OSError:
+        return None
+    return _backup_file(file_path)
 
 
 def _backup_file(file_path: str) -> str | None:
-    """编辑前创建临时备份，返回备份路径；若文件不存在返回 None"""
-    if not os.path.isfile(file_path):
+    """复制一份带时间戳的备份，返回备份路径；文件不存在或复制失败返回 None。"""
+    target = Path(file_path)
+    if not target.is_file():
         return None
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    candidate = target.with_name(f"{target.name}.bak-{stamp}")
+    counter = 1
+    while candidate.exists():
+        candidate = target.with_name(f"{target.name}.bak-{stamp}-{counter}")
+        counter += 1
     try:
-        fd, backup_path = tempfile.mkstemp(
-            suffix=Path(file_path).suffix + ".bak",
-            prefix=Path(file_path).stem + "_",
-            dir=Path(file_path).parent,
-        )
-        os.close(fd)
-        shutil.copy2(file_path, backup_path)
-        logger.debug("已创建备份: %s → %s", file_path, backup_path)
-        return backup_path
+        shutil.copy2(target, candidate)
+        logger.debug("已创建备份: %s → %s", file_path, candidate)
+        return str(candidate)
     except OSError as e:
         logger.warning("创建备份失败: %s", e)
         return None
@@ -141,6 +169,10 @@ def resolve_if_exists(file_path: str, mode: str) -> str:
     """
     path = Path(file_path)
     if not path.exists():
+        return file_path
+
+    # 空白文件（0 字节占位）不是用户内容，允许直接写入。
+    if path.is_file() and path.stat().st_size == 0:
         return file_path
 
     if mode == "overwrite":

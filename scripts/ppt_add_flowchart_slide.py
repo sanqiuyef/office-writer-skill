@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 
 import _common as common
+import _native as native
 from office_engine.models import EditResult, FrameworkDiagram
 from office_engine.office_com import com_is_available, try_add_flowchart_slide
 
@@ -20,6 +21,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run(args):
     params = common.parse_params(args)
+    if native.use_csharp(TOOL):
+        return native.run_entry_from_args(TOOL, args, params)
     file_path = common.arg(args, params, "file_path", required=True)
     diagram = common.model_arg(params, "diagram", FrameworkDiagram)
     if not com_is_available():

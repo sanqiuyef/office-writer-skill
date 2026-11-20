@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 import _common as common
+import _native as native
 from office_engine.document_ops import batch_edit_office_document
 from office_engine.models import OfficeOperation
 
@@ -19,10 +20,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = common.json_parser(TOOL, "以原子事务批量编辑 DOCX/XLSX/PPTX（set/add/remove/move/replace）。")
     parser.add_argument("--file-path", dest="file_path")
     parser.add_argument("--output-path", dest="output_path")
+    common.add_overwrite_flags(parser)
     parser.add_argument(
         "--no-backup",
         dest="no_backup",
         action="store_true",
+        default=None,
         help="省略 --output-path 原地写回时不生成 *.bak-YYYYmmdd-HHMMSS 备份",
     )
     return parser
@@ -30,10 +33,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run(args):
     params = common.parse_params(args)
+    if native.use_csharp(TOOL):
+        return native.run_entry_from_args(TOOL, args, params)
     file_path = common.arg(args, params, "file_path", required=True)
     output_path = common.arg(args, params, "output_path")
     operations = common.model_list_arg(params, "operations", OfficeOperation)
-    no_backup = bool(getattr(args, "no_backup", False))
+    no_backup = common.bool_arg(args, params, "no_backup", False)
+    if output_path:
+        common.output_policy(args, params, output_path)
     backup_path = None
     source = Path(file_path)
     supported = {".docx", ".xlsx", ".xlsm", ".pptx"}
@@ -49,7 +56,9 @@ def run(args):
         except OSError as exc:
             raise common.ToolRuntimeError(f"无法创建原地编辑备份 {candidate}: {exc}") from exc
         backup_path = str(candidate)
-    result = batch_edit_office_document(file_path, operations, output_path)
+    result = batch_edit_office_document(
+        file_path, operations, output_path, backup=output_path is not None
+    )
     common.ensure_success(result)
     data = common.result_data(result)
     if backup_path:

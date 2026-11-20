@@ -1,6 +1,6 @@
 # Vendored from mcp_office_writer/ppt_writer.py (mcp-office-writer 0.6.0, 2026-11).
 # Upstream path: mcp_office_writer/ppt_writer.py (repository-relative).
-# Modifications: cast layout geometry to int for python-pptx 1.0.2 compatibility; added read-only audit_slide_layout for out-of-bounds/overlap warnings; added reflow_slide_layout for opt-in automatic repositioning/resizing.
+# Modifications: cast layout geometry to int for python-pptx 1.0.2 compatibility; added read-only audit_slide_layout for out-of-bounds/overlap warnings; added reflow_slide_layout for opt-in automatic repositioning/resizing; added table/chart geometry, image crop/hyperlinks, shape hyperlinks, placeholder-column targeting, real bullet/number markers, and .potx template loading via a content-type-normalized working copy.
 
 """
 mcp-office-writer - PowerPoint (.pptx) 写入/编辑逻辑
@@ -170,14 +170,19 @@ def _add_paragraph_item(tf, item: SlideItem):
         p.alignment = ALIGN_MAP.get(style.alignment, PP_ALIGN.LEFT)
 
 
-def _add_slide_table(slide, td: SlideTableDef, left, top, width, height):
-    """在幻灯片上添加表格"""
+def _add_slide_table(slide, td: SlideTableDef, default_left=None, default_top=None,
+                     default_width=None, default_height=None):
+    """在幻灯片上添加表格；模型未给位置时使用调用方传入的栏位默认值。"""
     rows = len(td.rows) + (1 if td.headers else 0)
     cols = max(len(td.headers) if td.headers else 0,
                max((len(r) for r in td.rows), default=0))
     if rows == 0 or cols == 0:
         return
 
+    left = Inches(td.x) if td.x is not None else (default_left or Inches(0.5))
+    top = Inches(td.y) if td.y is not None else (default_top or Inches(2.0))
+    width = Inches(td.width) if td.width is not None else (default_width or Inches(7.0))
+    height = Inches(td.height) if td.height is not None else (default_height or Inches(2.5))
     table_shape = slide.shapes.add_table(rows, cols, left, top, width, height)
     table = table_shape.table
 
@@ -185,11 +190,32 @@ def _add_slide_table(slide, td: SlideTableDef, left, top, width, height):
         for ci, h in enumerate(td.headers):
             cell = table.cell(0, ci)
             cell.text = str(h)
+            if td.header_bold:
+                for paragraph in cell.text_frame.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.bold = True
 
     for ri, row_data in enumerate(td.rows, 1 if td.headers else 0):
         for ci, val in enumerate(row_data):
             if ci < cols:
                 table.cell(ri, ci).text = str(val)
+
+    if td.column_widths:
+        target_width = td.width if td.width is not None else 7.0
+        widths = [max(float(w), 0.1) for w in td.column_widths[:cols]]
+        if len(widths) < cols:
+            missing = cols - len(widths)
+            remaining = max(target_width - sum(widths), 0.0)
+            # 缺省列均分剩余宽度；剩余不足时仍保证每列可用的最小宽度
+            fill_width = max(remaining / missing, 0.1)
+            widths.extend([fill_width] * missing)
+        total = sum(widths)
+        if total > 0 and abs(total - target_width) > 0.01:
+            # python-pptx 的表格宽度等于列宽之和，必须归一化到声明宽度。
+            factor = target_width / total
+            widths = [width * factor for width in widths]
+        for index, column_width in enumerate(widths):
+            table.columns[index].width = Inches(column_width)
 
 
 def _add_slide_image(slide, img_def: SlideImageDef):
@@ -213,9 +239,22 @@ def _add_slide_image(slide, img_def: SlideImageDef):
     width = Inches(img_def.width or 4.0)
     height = Inches(img_def.height) if img_def.height else None
     if height:
-        slide.shapes.add_picture(file_path, left, top, width, height)
+        picture = slide.shapes.add_picture(file_path, left, top, width, height)
     else:
-        slide.shapes.add_picture(file_path, left, top, width)
+        picture = slide.shapes.add_picture(file_path, left, top, width)
+
+    # 裁剪比例直接映射到 python-pptx 的 crop_*（0~1 表示裁掉的比例）
+    if img_def.crop_left is not None:
+        picture.crop_left = img_def.crop_left
+    if img_def.crop_right is not None:
+        picture.crop_right = img_def.crop_right
+    if img_def.crop_top is not None:
+        picture.crop_top = img_def.crop_top
+    if img_def.crop_bottom is not None:
+        picture.crop_bottom = img_def.crop_bottom
+
+    if img_def.hyperlink_url:
+        picture.click_action.hyperlink.address = img_def.hyperlink_url
 
 
 def _add_slide_shape(slide, shape_def: SlideShapeDef):
@@ -272,6 +311,9 @@ def _add_slide_shape(slide, shape_def: SlideShapeDef):
                 run.font.bold = True
             run.font.size = Pt(shape_def.font_size or 12)
 
+    if shape_def.hyperlink_url:
+        shape.click_action.hyperlink.address = shape_def.hyperlink_url
+
 
 def _add_slide_connector(slide, connector_def):
     """在幻灯片上添加连接线/箭头"""
@@ -311,21 +353,62 @@ def _add_slide_connector(slide, connector_def):
         head.set("len", "med")
 
 
-def _build_slide_body(slide, items: list[SlideItem] | None, default_left, default_top, default_width, default_height):
+def _set_list_marker(paragraph, numbered: bool) -> None:
+    """给段落注入真正的列表标记（项目符号或自动编号）。
+
+    python-pptx 没有列表 API，直接写 a:pPr 下的 a:buChar / a:buAutoNum；
+    a:pPr 子元素有固定顺序，必须插在 a:buBlip/a:tabLst/a:defRPr/a:extLst 之前，
+    并移除布局可能带入的 a:buNone。
+    """
+    from lxml import etree
+    from pptx.oxml.ns import qn
+
+    pPr = paragraph._p.get_or_add_pPr()
+    for tag in ("a:buNone", "a:buAutoNum", "a:buChar"):
+        for old in pPr.findall(qn(tag)):
+            pPr.remove(old)
+    # 列表文本需要悬挂缩进，否则符号与正文从同一 x 开始、首字被符号覆盖。
+    level = max(int(getattr(paragraph, "level", 0) or 0), 0)
+    pPr.set("marL", str(342900 * (level + 1)))
+    pPr.set("indent", "-342900")
+
+    if numbered:
+        marker = etree.Element(qn("a:buAutoNum"))
+        marker.set("type", "arabicPeriod")
+    else:
+        marker = etree.Element(qn("a:buChar"))
+        marker.set("char", "•")
+    pPr.insert_element_before(marker, "a:buBlip", "a:tabLst", "a:defRPr", "a:extLst")
+
+
+def _build_slide_body(
+    slide,
+    items: list[SlideItem] | None,
+    default_left,
+    default_top,
+    default_width,
+    default_height,
+    placeholder_idx: int | None = 1,
+):
     """向幻灯片主体区域写入内容元素"""
     if not items:
         return
 
     for item in items:
         if item.type == "paragraph":
-            # 将段落添加到现有的标题/正文占位符
+            # 将段落添加到现有的标题/正文占位符；双栏时按 placeholder_idx 选栏
             text_frame = None
             if slide.placeholders:
-                # 找第一个正文占位符
-                for ph in slide.placeholders:
-                    if ph.placeholder_format.idx == 1:  # 正文
-                        text_frame = ph.text_frame
-                        break
+                if placeholder_idx is not None:
+                    for ph in slide.placeholders:
+                        if ph.placeholder_format.idx == placeholder_idx:
+                            text_frame = ph.text_frame
+                            break
+                if text_frame is None:
+                    for ph in slide.placeholders:
+                        if ph.placeholder_format.idx == 1:  # 正文
+                            text_frame = ph.text_frame
+                            break
                 if text_frame is None and len(slide.placeholders) > 1:
                     text_frame = slide.placeholders[1].text_frame
 
@@ -338,8 +421,10 @@ def _build_slide_body(slide, items: list[SlideItem] | None, default_left, defaul
                 tf.text = item.text or ""
 
         elif item.type == "table" and item.table:
-            td = item.table
-            _add_slide_table(slide, td, default_left, Inches(2.0), Inches(7.0), Inches(2.5))
+            _add_slide_table(
+                slide, item.table,
+                default_left, Inches(2.0), default_width, Inches(2.5),
+            )
 
         elif item.type == "image" and item.image:
             _add_slide_image(slide, item.image)
@@ -364,16 +449,21 @@ def _build_slide_body(slide, items: list[SlideItem] | None, default_left, defaul
                 p.level = item.level
                 p.alignment = PP_ALIGN.LEFT
                 if item.type == "bullet_list":
-                    p.level = 0  # 项目符号由布局决定
+                    p.level = 0
+                _set_list_marker(p, numbered=item.type == "numbered_list")
                 if item.style:
                     _apply_text_style(p.runs[0], item.style) if p.runs else None
 
         elif item.type == "chart" and item.chart:
-            _add_slide_chart(slide, item.chart, default_left, Inches(1.5), Inches(8.0), Inches(4.5))
+            _add_slide_chart(
+                slide, item.chart,
+                default_left, default_top, default_width, default_height,
+            )
 
 
-def _add_slide_chart(slide, chart_def: ChartDef, left, top, width, height):
-    """在幻灯片上添加图表"""
+def _add_slide_chart(slide, chart_def: ChartDef, default_left=None, default_top=None,
+                     default_width=None, default_height=None):
+    """在幻灯片上添加图表（位置与尺寸优先取模型定义，否则用调用方栏位默认值）。"""
     from pptx.chart.data import CategoryChartData
     from pptx.enum.chart import XL_CHART_TYPE
 
@@ -382,6 +472,9 @@ def _add_slide_chart(slide, chart_def: ChartDef, left, top, width, height):
         "bar": XL_CHART_TYPE.BAR_CLUSTERED,
         "line": XL_CHART_TYPE.LINE_MARKERS,
         "pie": XL_CHART_TYPE.PIE,
+        "doughnut": XL_CHART_TYPE.DOUGHNUT,
+        "area": XL_CHART_TYPE.AREA,
+        "radar": XL_CHART_TYPE.RADAR,
     }
     ctype = chart_type_map.get(chart_def.chart_type, XL_CHART_TYPE.COLUMN_CLUSTERED)
 
@@ -390,6 +483,10 @@ def _add_slide_chart(slide, chart_def: ChartDef, left, top, width, height):
     for series in chart_def.series:
         chart_data.add_series(series.name, series.values)
 
+    left = Inches(chart_def.x) if chart_def.x is not None else (default_left or Inches(0.5))
+    top = Inches(chart_def.y) if chart_def.y is not None else (default_top or Inches(1.5))
+    width = Inches(chart_def.width) if chart_def.width is not None else (default_width or Inches(8.0))
+    height = Inches(chart_def.height) if chart_def.height is not None else (default_height or Inches(4.5))
     chart_frame = slide.shapes.add_chart(ctype, left, top, width, height, chart_data)
     chart = chart_frame.chart
 
@@ -437,12 +534,24 @@ def _create_slide(prs, slide_def: SlideDef, layout_idx: int):
 
     # 主体内容
     if slide_def.body:
-        _build_slide_body(slide, slide_def.body, Inches(0.5), Inches(1.5), Inches(8.0), Inches(4.5))
+        _build_slide_body(
+            slide, slide_def.body,
+            Inches(0.5), Inches(1.5), Inches(8.0), Inches(4.5),
+            placeholder_idx=1,
+        )
 
-    # 双栏布局
+    # 双栏布局：左栏落 idx=1、右栏落 idx=2（版式没有 idx=2 时回退原有逻辑）
     if slide_def.left or slide_def.right:
-        _build_slide_body(slide, slide_def.left, Inches(0.5), Inches(1.5), Inches(4.0), Inches(4.5))
-        _build_slide_body(slide, slide_def.right, Inches(5.0), Inches(1.5), Inches(4.0), Inches(4.5))
+        _build_slide_body(
+            slide, slide_def.left,
+            Inches(0.5), Inches(1.5), Inches(4.0), Inches(4.5),
+            placeholder_idx=1,
+        )
+        _build_slide_body(
+            slide, slide_def.right,
+            Inches(5.0), Inches(1.5), Inches(4.0), Inches(4.5),
+            placeholder_idx=2,
+        )
 
     # 演讲者备注
     if slide_def.notes:
@@ -450,6 +559,51 @@ def _create_slide(prs, slide_def: SlideDef, layout_idx: int):
         notes_slide.notes_text_frame.text = slide_def.notes
 
     return slide
+
+
+_POTX_TEMPLATE_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-officedocument.presentationml.template.main+xml"
+)
+_PPTX_PRESENTATION_CONTENT_TYPE = (
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"
+)
+
+
+def _load_presentation(file_path: str):
+    """加载演示文稿；.potx 先转成临时 .pptx 工作副本再交给 python-pptx。
+
+    python-pptx 的 Package.open 只接受 presentation.main 内容类型，标准 .potx
+    的 [Content_Types].xml 标记为 template.main，直接加载会抛 ValueError。
+    这里把工作副本中的 template.main 改写为 presentation.main，加载完成后立即
+    删除临时文件，源 .potx 保持不变。
+    """
+    if os.path.splitext(file_path)[1].lower() != ".potx":
+        return Presentation(file_path)
+
+    import tempfile
+    import zipfile
+
+    fd, temp_path = tempfile.mkstemp(prefix=".potx_", suffix=".pptx")
+    os.close(fd)
+    try:
+        with zipfile.ZipFile(file_path) as source, zipfile.ZipFile(
+            temp_path, "w", zipfile.ZIP_DEFLATED
+        ) as target:
+            for item in source.infolist():
+                data = source.read(item.filename)
+                if item.filename == "[Content_Types].xml":
+                    text = data.decode("utf-8").replace(
+                        _POTX_TEMPLATE_CONTENT_TYPE, _PPTX_PRESENTATION_CONTENT_TYPE
+                    )
+                    data = text.encode("utf-8")
+                target.writestr(item, data)
+        # python-pptx 在加载阶段就把 part 读入内存，返回后即可删除临时文件
+        return Presentation(temp_path)
+    finally:
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
 
 
 def create_powerpoint(
@@ -472,7 +626,7 @@ def create_powerpoint(
     try:
         if template:
             validate_input_file(template, (".pptx", ".potx"))
-            prs = Presentation(template)
+            prs = _load_presentation(template)
         else:
             prs = Presentation()
 
@@ -487,7 +641,7 @@ def create_powerpoint(
             layout_idx = get_ppt_layout_index(slide_def.layout)
             _create_slide(prs, slide_def, layout_idx)
 
-        atomic_save(prs.save, resolved_path)
+        backup_path = atomic_save(prs.save, resolved_path)
         size = get_file_size(resolved_path)
 
         return CreateResult(
@@ -496,6 +650,7 @@ def create_powerpoint(
             file_size=size,
             slides_count=len(slides),
             message=f"PowerPoint 演示文稿创建成功: {resolved_path}",
+            backup_path=backup_path,
         )
     except Exception as e:
         return CreateResult(
@@ -535,12 +690,13 @@ def edit_powerpoint(
             layout_idx = get_ppt_layout_index(slide_def.layout)
             _create_slide(prs, slide_def, layout_idx)
             count += 1
-        atomic_save(prs.save, file_path)
+        backup_path = atomic_save(prs.save, file_path)
         return EditResult(
             success=True,
             file_path=file_path,
             operation_count=count,
             message=f"已追加 {count} 张幻灯片到 PPT",
+            backup_path=backup_path,
         )
     except Exception as e:
         return EditResult(
@@ -1194,7 +1350,7 @@ def analyze_powerpoint_template(
         return {"success": False, "file_path": file_path, "message": str(e)}
 
     try:
-        prs = Presentation(file_path)
+        prs = _load_presentation(file_path)
         layout_names = [layout.name for layout in prs.slide_layouts]
         fonts_found: set[str] = set()
         color_hexes: set[str] = set()

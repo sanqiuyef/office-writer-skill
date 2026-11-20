@@ -4,7 +4,8 @@
   "timeouts": {
     "com_operation_seconds": 60,
     "markdown_convert_seconds": 120,
-    "dsoffice_operation_seconds": 300
+    "dsoffice_operation_seconds": 300,
+    "native_operation_seconds": 300
   },
   "render": {
     "default_dpi": 144

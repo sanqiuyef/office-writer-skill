@@ -1,6 +1,6 @@
 # Vendored from mcp_office_writer/pdf_writer.py (mcp-office-writer 0.6.0, 2026-11).
 # Upstream path: mcp_office_writer/pdf_writer.py (repository-relative).
-# Modifications: removed hard-coded Windows Fonts literals; font dir derives from WINDIR/SystemRoot; error text no longer embeds an absolute path.
+# Modifications: removed hard-coded Windows Fonts literals; font dir derives from WINDIR/SystemRoot; error text no longer embeds an absolute path; an existing non-empty target is backed up before fpdf2 writes over it.
 """
 mcp-office-writer - PDF (.pdf) 创建模块
 基于 fpdf2 库实现 PDF 文档生成，支持中文。
@@ -414,7 +414,7 @@ def create_pdf_document(
         CreateResult: {success, file_path, file_size, message}
     """
     from .utils import (
-        validate_output_path, resolve_if_exists, get_file_size,
+        backup_target, validate_output_path, resolve_if_exists, get_file_size,
     )
 
     try:
@@ -432,9 +432,11 @@ def create_pdf_document(
             message="content.sections 不能为空",
         )
 
+    backup_path = None
     try:
         writer = PdfWriter(page_setup=page_setup, font_config=font_config)
         writer.write(content)
+        backup_path = backup_target(output_path)
         writer.save(output_path)
     except Exception as e:
         logger.error("创建 PDF 失败: %s", e, exc_info=True)
@@ -450,4 +452,5 @@ def create_pdf_document(
         file_path=output_path,
         file_size=file_size,
         message=f"成功创建 PDF 文档，共 {sections_count} 个内容块",
+        backup_path=backup_path,
     )

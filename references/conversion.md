@@ -129,9 +129,9 @@ python -X utf8 scripts/recalculate_excel_formulas.py \
 
 ## OCR（可选）
 
-`read_pdf_document.py` 发现 PDF 文本层缺失/几乎只有重复水印时，会尝试 Tesseract OCR：
+`read_pdf_document.py` 发现 PDF 文本层缺失/几乎只有重复水印时，会尝试 Tesseract OCR（Python 与 C# 后端行为一致）：
 
-- 需要 `pytesseract` + Tesseract 可执行文件；
-- 可执行文件定位：`OFFICE_TESSERACT_CMD`，其次 `TESSERACT_CMD`，最后 `shutil.which("tesseract")`；
+- Python 后端需要 `pytesseract` + Tesseract 可执行文件；C# 后端直接调用 Tesseract CLI；
+- 可执行文件定位：`OFFICE_TESSERACT_CMD`，其次 `TESSERACT_CMD`，最后从 `PATH` 查找 `tesseract`；
 - 开关与参数：`MCP_OFFICE_OCR`、`MCP_OFFICE_OCR_LANG`、`MCP_OFFICE_OCR_DPI`、`MCP_OFFICE_OCR_MAX_PAGES`、`MCP_OFFICE_OCR_MIN_TEXT_CHARS`；
 - 未安装 Tesseract 时，文本 PDF 不受影响；扫描件读取降级返回文本层并在 `message` 中说明。

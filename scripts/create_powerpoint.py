@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 
 import _common as common
+import _native as native
 from office_engine.models import SlideDef
 from office_engine.ppt_writer import create_powerpoint
 
@@ -16,20 +17,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser = common.json_parser(TOOL, "创建 PowerPoint；支持布局、段落、表格、图片、形状、图表与备注。")
     parser.add_argument("--output-path", dest="output_path")
     parser.add_argument("--template")
-    parser.add_argument("--if-exists", dest="if_exists")
+    common.add_overwrite_flags(parser)
     return parser
 
 
 def run(args):
     params = common.parse_params(args)
+    if native.use_csharp(TOOL):
+        return native.run_entry_from_args(TOOL, args, params)
     output_path = common.arg(args, params, "output_path", required=True)
     slides = common.model_list_arg(params, "slides", SlideDef)
     template = common.arg(args, params, "template")
-    if_exists = common.choice(
-        common.arg(args, params, "if_exists", "overwrite"),
-        {"overwrite", "error", "rename"},
-        "if_exists",
-    )
+    if_exists = common.output_policy(args, params, output_path)
     result = create_powerpoint(output_path, slides, template, if_exists)
     common.ensure_success(result)
     return common.result_data(result), 0

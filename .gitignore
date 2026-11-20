@@ -6,6 +6,11 @@ venv/
 .DS_Store
 Thumbs.db
 
+# office-native build outputs（二进制由 build.ps1 生成，不提交）
+tools/office-native/bin/
+tools/office-native/obj/
+tools/office-native/dist/
+
 # Runtime cache and local test artifacts
 assets/image_cache/
 tests/_work/

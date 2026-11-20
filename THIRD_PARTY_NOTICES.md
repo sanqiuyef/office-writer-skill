@@ -38,7 +38,22 @@ Optional external tools, installed separately under their own licenses:
 - **Microsoft Office / WPS Office COM** — used only when installed locally.
 - **Tesseract OCR** — used for scanned-PDF text extraction.
 
-## 3. Templates and examples
+## 3. C# backend (NuGet, restored at build time)
+
+| Package | License | Use |
+|:---|:---|:---|
+| DocumentFormat.OpenXml | MIT | docx/xlsx/pptx file-level read/write |
+| PdfPig | Apache-2.0 | PDF text/structure reading |
+| PdfSharpCore | MIT | PDF creation (CJK font embedding) |
+| PDFtoImage | MIT | PDF → PNG via PDFium |
+| SkiaSharp (transitive) | MIT | PDFtoImage rendering backend |
+| PDFium (bblanchon.PDFium.Win32, transitive) | BSD-3-Clause | native PDF renderer |
+
+`tools/office-native/dist/office-native.exe` bundles these native libraries
+via `IncludeNativeLibrariesForSelfExtract=true`; they are extracted to a temp
+directory at runtime.
+
+## 4. Templates and examples
 
 `templates/*.docx`, `templates/*.xlsx`, `templates/*.pptx` are starter files
 generated for this skill and contain no third-party text.

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 
 import _common as common
+import _native as native
 from office_engine.ppt_writer import list_color_schemes
 
 TOOL = "ppt_list_color_schemes"
@@ -17,6 +18,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run(args):
+    params = common.parse_params(args)
+    if native.use_csharp(TOOL):
+        return native.run_entry_from_args(TOOL, args, params)
     return {"schemes": list_color_schemes()}, 0
 
 

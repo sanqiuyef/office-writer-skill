@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 
 import _common as common
+import _native as native
 from office_engine.models import SlideDef
 from office_engine.ppt_writer import edit_powerpoint
 
@@ -20,6 +21,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run(args):
     params = common.parse_params(args)
+    if native.use_csharp(TOOL):
+        return native.run_entry_from_args(TOOL, args, params)
     file_path = common.arg(args, params, "file_path", required=True)
     append_slides = common.model_list_arg(params, "append_slides", SlideDef)
     result = edit_powerpoint(file_path, append_slides)

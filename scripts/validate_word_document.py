@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 
 import _common as common
+import _native as native
 from office_engine.checker import validate_word_document
 
 TOOL = "validate_word_document"
@@ -19,6 +20,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run(args):
     params = common.parse_params(args)
+    if native.use_csharp(TOOL):
+        return native.run_entry_from_args(TOOL, args, params)
     file_path = common.arg(args, params, "file_path", required=True)
     report = validate_word_document(file_path=file_path).to_dict()
     return report, 1 if report.get("errors", 0) > 0 else 0
