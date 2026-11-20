@@ -22,6 +22,8 @@ SLUGS = [
     "academic-seminar",
     "government-report",
     "government-briefing",
+    "hbut-defense",
+    "competition-defense",
 ]
 STANDARD_LAYOUTS = [
     "Title Slide",

@@ -19,7 +19,7 @@ python -X utf8 scripts/merge_office_template.py \
   --params '{"data":{"company":"示例公司","footer":"内部资料","title":"项目总结","summary":"摘要","body":"正文"}}'
 ```
 
-## PPT 模板库（6 套 16:9 成品模板）
+## PPT 模板库（8 套 16:9 成品模板）
 
 每套两个文件：
 
@@ -34,6 +34,8 @@ python -X utf8 scripts/merge_office_template.py \
 | `academic-seminar` | 开题与组会 | 学术科研 | 开题报告、组会、中期检查 | 华文中宋 / 微软雅黑 |
 | `government-report` | 政务汇报 | 政务公文 | 工作汇报、年度总结、督察整改 | 华文中宋 / 仿宋 |
 | `government-briefing` | 政策宣讲 | 政务公文 | 政策解读、宣讲培训、落实部署 | 华文中宋 / 仿宋 |
+| `hbut-defense` | 湖工大学术答辩 | 学术科研 | 湖工大学位答辩、开题、结题 | 微软雅黑 / 微软雅黑 |
+| `competition-defense` | 竞赛答辩 | 竞赛路演 | 挑战杯、互联网+、项目答辩 | 华文中宋 / 微软雅黑 |
 
 统一页序：封面 → 目录 → 章节页 → 内容页 → 图表页 → 表格页 → 两栏页 → 结尾。配色、页面用途与每页示例文案见 `assets/manifest.json`。
 
@@ -68,12 +70,13 @@ cp templates/ppt/business-report.pptx ./2026年度汇报.pptx
 python -X utf8 tools/build_ppt_templates.py
 ```
 
-脚本会重写 `templates/ppt/` 下全部 12 个文件（6 套 × pptx/potx），并保持 11 个标准版式的顺序——`create_powerpoint` 按固定索引映射版式，顺序变化会导致内容落到错误的版式。改配色、字体或示例文案都改这个脚本，不要手工编辑二进制模板。
+脚本会重写 `templates/ppt/` 下全部 16 个文件（8 套 × pptx/potx），并保持 11 个标准版式的顺序——`create_powerpoint` 按固定索引映射版式，顺序变化会导致内容落到错误的版式。改配色、字体或示例文案都改这个脚本，不要手工编辑二进制模板。
 
 ## 约束
 
-- 6 套 PPT 模板均为 16:9（13.333 × 7.5 英寸），与 `create_powerpoint` 的默认画幅（10 × 7.5）不同；用 `.potx` 新建时画幅随模板走。
+- 8 套 PPT 模板均为 16:9（13.333 × 7.5 英寸），与 `create_powerpoint` 的默认画幅（10 × 7.5）不同；用 `.potx` 新建时画幅随模板走。
 - 标题字体依赖华文中宋（`STZHONGS.TTF`）或微软雅黑；政务两套正文用仿宋。目标机器缺字体时 PowerPoint 会回退，版式不保证一致。
+- `hbut-defense` 与 `competition-defense` 只含校色、版式与示例文案；校徽、校园实景图、赛事标识均为虚线占位框，学校版权素材不分发，使用前自行放入。
 - `create_*` 的 `--template` 是“继承样式/版式”，不是填充占位符；填充占位符用 `merge_office_template.py`。
 - 占位符只替换 `{{key}}` 双花括号；嵌套对象用 `{{user.name}}`，数组索引用 `{{items[0].title}}`。
 - 模板里的字体/配色可按项目要求自行修改；修改后建议跑一次 `validate_word_document.py`（Word）或 `convert_to_pdf.py` + `render_document_pages.py`（PPT/Excel）复核。

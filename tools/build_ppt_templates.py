@@ -23,6 +23,7 @@ from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
+from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 from pptx.oxml import parse_xml
@@ -232,6 +233,30 @@ THEMES = [
             "end": ("谢谢", "XX 市 XX 局  ·  2026 年 11 月"),
         },
     },
+    {
+        "slug": "hbut-defense",
+        "name": "湖工大学术答辩",
+        "colors": {
+            "primary": "06498D", "secondary": "0861BB", "accent": "C9A063",
+            "light": "EEF3FA", "muted": "5B6B7C", "text": "1F2937",
+            "header_text": "FFFFFF", "stripe": "F3F7FC",
+        },
+        "fonts": {"title": "微软雅黑", "body": "微软雅黑"},
+        "decor": "hbut",
+        "demo_style": "hbut",
+    },
+    {
+        "slug": "competition-defense",
+        "name": "竞赛答辩",
+        "colors": {
+            "primary": "A61B29", "secondary": "1F6B5E", "accent": "C9A063",
+            "light": "F7F3EA", "muted": "6B5B4B", "text": "2B2B2B",
+            "header_text": "FFFFFF", "stripe": "FAF6EE",
+        },
+        "fonts": {"title": "华文中宋", "body": "微软雅黑"},
+        "decor": "competition",
+        "demo_style": "competition",
+    },
 ]
 
 SLIDE_W, SLIDE_H = 13.333, 7.5
@@ -414,9 +439,15 @@ def _style_layouts(prs: Presentation, theme: dict) -> None:
 
 
 def _decorate(prs: Presentation, theme: dict) -> None:
+    style = theme.get("decor", "bar")
+    if style == "hbut":
+        _decorate_hbut(prs, theme)
+        return
+    if style == "competition":
+        _decorate_competition(prs, theme)
+        return
     colors = theme["colors"]
     layouts = prs.slide_layouts
-    style = theme.get("decor", "bar")
     items: list[tuple[object, str]] = []
 
     def rect(layout, left, top, width, height, color, shape_id, **kw):
@@ -454,6 +485,88 @@ def _decorate(prs: Presentation, theme: dict) -> None:
         pos = positions.get(id(layout), 2)
         layout.shapes._spTree.insert(pos, parse_xml(xml))
         positions[id(layout)] = pos + 1
+
+
+def _box_xml(left: float, top: float, width: float, height: float, color: str,
+             shape_id: int, text: str | None = None, font_size: int = 11,
+             text_color: str = "8A8A8A", dash: bool = True) -> str:
+    """虚线/实线占位框，可带居中说明文字（校徽、校园图、赛事标识位）。"""
+    line = (
+        f'<a:ln w="12700"><a:solidFill><a:srgbClr val="{color}"/></a:solidFill>'
+        + ('<a:prstDash val="dash"/>' if dash else "")
+        + "</a:ln>"
+    )
+    body = '<p:txBody><a:bodyPr anchor="ctr"/><a:lstStyle/><a:p><a:pPr algn="ctr"/>'
+    if text:
+        body += (
+            f'<a:r><a:rPr lang="zh-CN" sz="{font_size * 100}">'
+            f'<a:solidFill><a:srgbClr val="{text_color}"/></a:solidFill>'
+            f'<a:latin typeface="微软雅黑"/><a:ea typeface="微软雅黑"/>'
+            f"</a:rPr><a:t>{text}</a:t></a:r>"
+        )
+    body += '<a:endParaRPr lang="zh-CN"/></a:p></p:txBody>'
+    return (
+        f'<p:sp {nsdecls("p", "a")}>'
+        f'<p:nvSpPr><p:cNvPr id="{shape_id}" name="decor-{shape_id}"/>'
+        "<p:cNvSpPr/><p:nvPr/></p:nvSpPr>"
+        "<p:spPr>"
+        f'<a:xfrm><a:off x="{int(left * 914400)}" y="{int(top * 914400)}"/>'
+        f'<a:ext cx="{int(width * 914400)}" cy="{int(height * 914400)}"/></a:xfrm>'
+        '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+        "<a:noFill/>"
+        f"{line}"
+        "</p:spPr>"
+        f"{body}"
+        "</p:sp>"
+    )
+
+
+def _add_decor_items(items: list[tuple[object, str]]) -> None:
+    positions: dict[int, int] = {}
+    for layout, xml in items:
+        pos = positions.get(id(layout), 2)
+        layout.shapes._spTree.insert(pos, parse_xml(xml))
+        positions[id(layout)] = pos + 1
+
+
+def _decorate_hbut(prs: Presentation, theme: dict) -> None:
+    """湖工大答辩：左侧深蓝竖条 + 校徽/校园图/页脚校名占位框。"""
+    colors = theme["colors"]
+    layouts = prs.slide_layouts
+    items: list[tuple[object, str]] = [
+        (layouts[0], _rect_xml(0, 0, 0.3, SLIDE_H, colors["primary"], 900)),
+        (layouts[2], _rect_xml(0, 0, 0.3, SLIDE_H, colors["primary"], 901)),
+        (layouts[0], _box_xml(5.92, 0.42, 1.5, 1.5, "9AA8B8", 970, "校徽占位", 10, "8A98AA")),
+        (layouts[2], _box_xml(9.6, 2.0, 3.0, 3.0, "9AA8B8", 971, "校园图占位", 11, "8A98AA")),
+    ]
+    for idx in (1, 3, 4, 5, 7):
+        items.append((layouts[idx], _rect_xml(
+            0.9, 1.45, 1.5, 0.06, colors["accent"], 940 + idx)))
+        items.append((layouts[idx], _rect_xml(
+            0.9, 7.05, 11.5, 0.01, "D9D9D9", 950 + idx)))
+        items.append((layouts[idx], _box_xml(
+            0.9, 7.12, 1.45, 0.26, "C9D6E5", 980 + idx, "校徽 + 校名", 8,
+            "8A98AA", dash=False)))
+    _add_decor_items(items)
+
+
+def _decorate_competition(prs: Presentation, theme: dict) -> None:
+    """竞赛答辩：顶部中国红色带 + 赛事标识/图片占位框。"""
+    colors = theme["colors"]
+    layouts = prs.slide_layouts
+    items: list[tuple[object, str]] = [
+        (layouts[0], _rect_xml(0, 0, SLIDE_W, 0.28, colors["primary"], 910)),
+        (layouts[2], _rect_xml(0, 0, SLIDE_W, 0.28, colors["primary"], 911)),
+        (layouts[0], _rect_xml(0.9, 1.9, 3.2, 0.07, colors["accent"], 912)),
+        (layouts[0], _box_xml(9.9, 1.1, 2.9, 1.5, "E8DCC8", 972, "赛事标识 / 校徽", 11, "B09A78")),
+        (layouts[2], _box_xml(8.8, 1.9, 3.4, 3.4, "E8DCC8", 973, "图片占位", 12, "B09A78")),
+    ]
+    for idx in (1, 3, 4, 5):
+        items.append((layouts[idx], _rect_xml(
+            0.9, 1.5, 1.5, 0.06, colors["accent"], 940 + idx)))
+        items.append((layouts[idx], _rect_xml(
+            0.9, 7.05, 11.5, 0.01, "D9D9D9", 950 + idx)))
+    _add_decor_items(items)
 
 
 def _place_header(slide, text: str, theme: dict, align=PP_ALIGN.LEFT,
@@ -503,7 +616,7 @@ def _add_basic_slide(prs: Presentation, layout_idx: int, theme: dict,
 
 # ── 演示页 ────────────────────────────────────────────────────────
 
-def _add_demo(prs: Presentation, theme: dict) -> None:
+def _add_demo_standard(prs: Presentation, theme: dict) -> None:
     demo = theme["demo"]
     colors = theme["colors"]
     title_font = theme["fonts"]["title"]
@@ -652,6 +765,421 @@ def _add_demo(prs: Presentation, theme: dict) -> None:
 
 
 # ── 保存 ──────────────────────────────────────────────────────────
+
+def _no_shadow(shape) -> None:
+    shape.shadow.inherit = False
+
+
+def _add_toc_columns(slide, items: list[tuple[str, str]], theme: dict) -> None:
+    """两列目录：大号编号 + 标题，移除正文占位符。"""
+    colors = theme["colors"]
+    for ph in list(slide.placeholders):
+        if ph.placeholder_format.idx == 1:
+            ph._element.getparent().remove(ph._element)
+    for col, group in enumerate((items[:3], items[3:])):
+        left = 0.9 + col * 6.1
+        for row, (number, title) in enumerate(group):
+            top = 1.8 + row * 1.4
+            num_box = slide.shapes.add_textbox(
+                Inches(left), Inches(top), Inches(0.9), Inches(0.75))
+            paragraph = num_box.text_frame.paragraphs[0]
+            run = paragraph.add_run()
+            run.text = number
+            _style_run(run, 26, colors["accent"], bold=True,
+                       font=theme["fonts"]["title"])
+            title_box = slide.shapes.add_textbox(
+                Inches(left + 0.95), Inches(top + 0.08), Inches(4.7), Inches(0.65))
+            paragraph = title_box.text_frame.paragraphs[0]
+            run = paragraph.add_run()
+            run.text = title
+            _style_run(run, 18, colors["text"], font=theme["fonts"]["body"])
+
+
+def _add_nav_bar(slide, labels: list[str], active: int, theme: dict) -> None:
+    """竞赛模板顶部章节导航条：当前段用青绿高亮。"""
+    colors = theme["colors"]
+    left, width = 0.55, 2.42
+    for index, label in enumerate(labels):
+        box = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Inches(left + index * width), Inches(0.18),
+            Inches(width - 0.06), Inches(0.36))
+        box.fill.solid()
+        box.fill.fore_color.rgb = _rgb(
+            colors["secondary"] if index == active else "E6DCCB")
+        box.line.fill.background()
+        _no_shadow(box)
+        frame = box.text_frame
+        frame.clear()
+        frame.word_wrap = False
+        paragraph = frame.paragraphs[0]
+        paragraph.alignment = PP_ALIGN.CENTER
+        run = paragraph.add_run()
+        run.text = label
+        _style_run(run, 11, "FFFFFF" if index == active else colors["muted"],
+                   bold=index == active, font=theme["fonts"]["body"])
+
+
+def _add_quote(slide, text: str, theme: dict) -> None:
+    """右下金句条。"""
+    colors = theme["colors"]
+    box = slide.shapes.add_textbox(Inches(0.9), Inches(6.25), Inches(11.5), Inches(0.55))
+    frame = box.text_frame
+    frame.clear()
+    paragraph = frame.paragraphs[0]
+    paragraph.alignment = PP_ALIGN.RIGHT
+    run = paragraph.add_run()
+    run.text = text
+    _style_run(run, 16, colors["primary"], bold=True, font=theme["fonts"]["title"])
+
+
+def _add_stat_page(prs: Presentation, theme: dict) -> None:
+    """三指标大数字页。"""
+    colors = theme["colors"]
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    _place_header(slide, "需求规模：三个数字说明迫切性", theme)
+    stats = [
+        ("1600 万人次", "年接待游客量", 0.9),
+        ("103.5 亿元", "年综合旅游收入", 4.95),
+        ("38 万亩", "抗旱调水覆盖面积", 9.0),
+    ]
+    for value, label, left in stats:
+        number = slide.shapes.add_textbox(Inches(left), Inches(2.15),
+                                          Inches(3.8), Inches(1.0))
+        paragraph = number.text_frame.paragraphs[0]
+        run = paragraph.add_run()
+        run.text = value
+        _style_run(run, 40, colors["primary"], bold=True, font=theme["fonts"]["title"])
+        rule = slide.shapes.add_shape(
+            MSO_SHAPE.RECTANGLE, Inches(left), Inches(3.2), Inches(0.85), Inches(0.05))
+        rule.fill.solid()
+        rule.fill.fore_color.rgb = _rgb(colors["accent"])
+        rule.line.fill.background()
+        _no_shadow(rule)
+        caption = slide.shapes.add_textbox(Inches(left), Inches(3.42),
+                                           Inches(3.6), Inches(0.5))
+        paragraph = caption.text_frame.paragraphs[0]
+        run = paragraph.add_run()
+        run.text = label
+        _style_run(run, 14, colors["muted"], font=theme["fonts"]["body"])
+    _add_quote(slide, "以红色初心，绘就智慧水利新图景", theme)
+    slide.notes_slide.notes_text_frame.text = "数据页：替换三个指标与口径来源。"
+
+
+def _add_timeline_page(prs: Presentation, theme: dict) -> None:
+    """四阶段时间线页。"""
+    colors = theme["colors"]
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    _place_header(slide, "实施路径：四阶段推进", theme)
+    line = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, Inches(1.25), Inches(2.52), Inches(9.55), Inches(0.025))
+    line.fill.solid()
+    line.fill.fore_color.rgb = _rgb("DCCDB4")
+    line.line.fill.background()
+    _no_shadow(line)
+    stages = [
+        ("01", "调研诊断", "摸清现状与缺口"),
+        ("02", "方案设计", "确定技术路线"),
+        ("03", "试点验证", "小范围跑通"),
+        ("04", "推广运营", "复制到全域"),
+    ]
+    for index, (number, title, desc) in enumerate(stages):
+        left = 0.9 + index * 2.95
+        circle = slide.shapes.add_shape(
+            MSO_SHAPE.OVAL, Inches(left), Inches(2.2), Inches(0.7), Inches(0.7))
+        circle.fill.solid()
+        circle.fill.fore_color.rgb = _rgb(colors["secondary"])
+        circle.line.fill.background()
+        _no_shadow(circle)
+        paragraph = circle.text_frame.paragraphs[0]
+        paragraph.alignment = PP_ALIGN.CENTER
+        run = paragraph.add_run()
+        run.text = number
+        _style_run(run, 16, "FFFFFF", bold=True)
+        textbox = slide.shapes.add_textbox(Inches(left), Inches(3.05), Inches(2.5), Inches(1.4))
+        frame = textbox.text_frame
+        frame.word_wrap = True
+        frame.clear()
+        first = frame.paragraphs[0]
+        run = first.add_run()
+        run.text = title
+        _style_run(run, 18, colors["text"], bold=True)
+        second = frame.add_paragraph()
+        run = second.add_run()
+        run.text = desc
+        _style_run(run, 13, colors["muted"])
+    slide.notes_slide.notes_text_frame.text = "时间线页：四阶段，可改为 3 或 5 段。"
+
+
+def _add_demo_hbut(prs: Presentation, theme: dict) -> None:
+    colors = theme["colors"]
+    title_font = theme["fonts"]["title"]
+    body_font = theme["fonts"]["body"]
+
+    # 1 封面
+    slide = prs.slides.add_slide(prs.slide_layouts[0])
+    for ph in slide.placeholders:
+        idx = ph.placeholder_format.idx
+        if idx == 0:
+            ph.text = "论文题目：面向 XX 场景的 XX 方法研究"
+            for p in ph.text_frame.paragraphs:
+                p.alignment = PP_ALIGN.LEFT
+                for run in p.runs:
+                    _style_run(run, 30, colors["primary"], bold=True, font=title_font)
+        elif idx == 1:
+            ph.text = ("答辩人：张  三　　学号：20230001\n"
+                       "指导教师：李四  教授　　学院：XX 学院\n2026 年 11 月")
+            for p in ph.text_frame.paragraphs:
+                p.alignment = PP_ALIGN.LEFT
+                for run in p.runs:
+                    _style_run(run, 13, colors["muted"], font=body_font)
+    slide.notes_slide.notes_text_frame.text = "封面：替换题目与信息栏；校徽位自行放入。"
+
+    # 2 目录
+    slide = prs.slides.add_slide(prs.slide_layouts[1])
+    _place_header(slide, "目  录", theme)
+    _add_toc_columns(slide, [
+        ("01", "研究背景与意义"), ("02", "国内外研究现状"), ("03", "研究方法与设计"),
+        ("04", "实验结果与分析"), ("05", "结论与展望"), ("06", "参考文献"),
+    ], theme)
+
+    # 3 章节页
+    slide = prs.slides.add_slide(prs.slide_layouts[2])
+    for ph in slide.placeholders:
+        idx = ph.placeholder_format.idx
+        if idx == 0:
+            ph.text = "01  研究背景与意义"
+            for p in ph.text_frame.paragraphs:
+                p.alignment = PP_ALIGN.LEFT
+                for run in p.runs:
+                    _style_run(run, 32, colors["primary"], bold=True, font=title_font)
+        elif idx == 1:
+            ph.text = "BACKGROUND AND SIGNIFICANCE"
+            for p in ph.text_frame.paragraphs:
+                p.alignment = PP_ALIGN.LEFT
+                for run in p.runs:
+                    _style_run(run, 13, colors["muted"], font=body_font)
+
+    # 4 内容页
+    slide = prs.slides.add_slide(prs.slide_layouts[1])
+    _place_header(slide, "研究背景：三个亟待解决的问题", theme)
+    for ph in slide.placeholders:
+        if ph.placeholder_format.idx == 1:
+            _fill_body(ph, [
+                ("现有方法在复杂场景下误检率偏高", False),
+                ("跨时相影像辐射差异导致伪变化干扰", False),
+                ("标注样本稀缺，模型泛化能力不足", False),
+                ("缺乏统一的精度评价与复现基准", False),
+            ], theme)
+
+    # 5 图表页
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    _place_header(slide, "实验结果：所提方法精度领先", theme)
+    data = CategoryChartData()
+    data.categories = ["OA", "F1", "IoU", "Kappa"]
+    data.add_series("基线模型", (0.842, 0.801, 0.734, 0.792))
+    data.add_series("本文方法", (0.913, 0.887, 0.821, 0.868))
+    chart = slide.shapes.add_chart(
+        XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(1.0), Inches(1.7),
+        Inches(11.3), Inches(5.0), data).chart
+    chart.has_legend = True
+    chart.legend.position = XL_LEGEND_POSITION.BOTTOM
+    chart.legend.include_in_layout = False
+    chart.font.size = Pt(12)
+
+    # 6 表格页
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    _place_header(slide, "与主流方法对比", theme)
+    headers = ["方法", "OA", "F1", "参数量"]
+    rows = [["FC-EF", "0.842", "0.801", "1.35 M"],
+            ["Bi-SRNet", "0.876", "0.849", "5.2 M"],
+            ["本文方法", "0.913", "0.887", "3.8 M"]]
+    shape = slide.shapes.add_table(len(rows) + 1, len(headers), Inches(1.0),
+                                   Inches(1.7), Inches(11.3),
+                                   Inches(0.6 * (len(rows) + 1)))
+    table = shape.table
+    for col, header in enumerate(headers):
+        cell = table.cell(0, col)
+        cell.text = header
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = _rgb(colors["primary"])
+        for p in cell.text_frame.paragraphs:
+            p.alignment = PP_ALIGN.LEFT if col == 0 else PP_ALIGN.CENTER
+            for run in p.runs:
+                _style_run(run, 15, "FFFFFF", bold=True, font=body_font)
+        cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+    for row_idx, row in enumerate(rows, start=1):
+        for col, value in enumerate(row):
+            cell = table.cell(row_idx, col)
+            cell.text = value
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = _rgb(
+                colors["stripe"] if row_idx % 2 else "FFFFFF")
+            for p in cell.text_frame.paragraphs:
+                p.alignment = PP_ALIGN.LEFT if col == 0 else PP_ALIGN.CENTER
+                for run in p.runs:
+                    _style_run(run, 14, colors["text"], font=body_font)
+            cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+
+    # 7 两栏页
+    slide = prs.slides.add_slide(prs.slide_layouts[3])
+    _place_header(slide, "研究贡献与不足", theme)
+    for ph in slide.placeholders:
+        idx = ph.placeholder_format.idx
+        if idx == 1:
+            _fill_body(ph, [("主要贡献", True),
+                            ("提出跨时相特征对齐模块", False),
+                            ("构建边界感知损失函数", False),
+                            ("两个公开数据集取得最优", False)], theme)
+        elif idx == 2:
+            _fill_body(ph, [("研究不足", True),
+                            ("极端天气样本覆盖不足", False),
+                            ("推理速度有待优化", False),
+                            ("尚未验证多光谱场景", False)], theme)
+
+    # 8 结尾
+    slide = prs.slides.add_slide(prs.slide_layouts[2])
+    for ph in slide.placeholders:
+        idx = ph.placeholder_format.idx
+        if idx == 0:
+            ph.text = "敬请各位老师批评指正"
+            for p in ph.text_frame.paragraphs:
+                p.alignment = PP_ALIGN.CENTER
+                for run in p.runs:
+                    _style_run(run, 36, colors["primary"], bold=True, font=title_font)
+        elif idx == 1:
+            ph.text = "2026 年 11 月"
+            for p in ph.text_frame.paragraphs:
+                p.alignment = PP_ALIGN.CENTER
+                for run in p.runs:
+                    _style_run(run, 15, colors["muted"], font=body_font)
+    slide.notes_slide.notes_text_frame.text = "结尾：致谢；可加联系方式或团队信息。"
+
+
+def _add_demo_competition(prs: Presentation, theme: dict) -> None:
+    colors = theme["colors"]
+    title_font = theme["fonts"]["title"]
+    body_font = theme["fonts"]["body"]
+
+    # 顶部导航条占位：标题与正文整体下移
+    for idx in (1, 3, 4, 5):
+        for ph in prs.slide_layouts[idx].placeholders:
+            if ph.placeholder_format.idx == 0:
+                ph.top = Inches(0.72)
+                ph.height = Inches(0.78)
+            elif ph.placeholder_format.idx in (1, 2):
+                ph.top = Inches(1.9)
+                ph.height = Inches(4.7)
+
+    # 1 封面
+    slide = prs.slides.add_slide(prs.slide_layouts[0])
+    for ph in slide.placeholders:
+        idx = ph.placeholder_format.idx
+        if idx == 0:
+            ph.text = "面向 XX 场景的 XX 方法研究"
+            for p in ph.text_frame.paragraphs:
+                p.alignment = PP_ALIGN.LEFT
+                for run in p.runs:
+                    _style_run(run, 30, colors["primary"], bold=True, font=title_font)
+        elif idx == 1:
+            ph.text = ("项目负责人：张  三　　团队成员：李四、王五\n"
+                       "指导教师：赵六  教授　　参赛赛道：XX 赛道\n2026 年 11 月")
+            for p in ph.text_frame.paragraphs:
+                p.alignment = PP_ALIGN.LEFT
+                for run in p.runs:
+                    _style_run(run, 13, colors["muted"], font=body_font)
+    slide.notes_slide.notes_text_frame.text = "封面：替换题目与信息栏；赛事标识位自行放入。"
+
+    # 2 目录
+    slide = prs.slides.add_slide(prs.slide_layouts[1])
+    _place_header(slide, "汇报路径", theme)
+    _add_toc_columns(slide, [
+        ("01", "红色传承"), ("02", "政策与需求"), ("03", "功能与价值"),
+        ("04", "技术与实现"), ("05", "创新与应用"), ("06", "总结与展望"),
+    ], theme)
+
+    # 3 章节页
+    slide = prs.slides.add_slide(prs.slide_layouts[2])
+    for ph in slide.placeholders:
+        idx = ph.placeholder_format.idx
+        if idx == 0:
+            ph.text = "01  红色传承"
+            for p in ph.text_frame.paragraphs:
+                p.alignment = PP_ALIGN.LEFT
+                for run in p.runs:
+                    _style_run(run, 32, colors["primary"], bold=True, font=title_font)
+        elif idx == 1:
+            ph.text = "RED HERITAGE AND ENGINEERING PRACTICE"
+            for p in ph.text_frame.paragraphs:
+                p.alignment = PP_ALIGN.LEFT
+                for run in p.runs:
+                    _style_run(run, 13, colors["muted"], font=body_font)
+    _add_quote(slide, "把红色初心，写进水利民生", theme)
+
+    # 4 内容页
+    slide = prs.slides.add_slide(prs.slide_layouts[1])
+    _place_header(slide, "研究背景：三个亟待解决的问题", theme)
+    for ph in slide.placeholders:
+        if ph.placeholder_format.idx == 1:
+            _fill_body(ph, [
+                ("现有方法在复杂场景下误检率偏高", False),
+                ("跨时相影像辐射差异导致伪变化干扰", False),
+                ("标注样本稀缺，模型泛化能力不足", False),
+                ("缺乏统一的精度评价与复现基准", False),
+            ], theme)
+
+    # 5 图表页
+    slide = prs.slides.add_slide(prs.slide_layouts[5])
+    _place_header(slide, "实验结果：所提方法精度领先", theme)
+    data = CategoryChartData()
+    data.categories = ["OA", "F1", "IoU", "Kappa"]
+    data.add_series("基线模型", (0.842, 0.801, 0.734, 0.792))
+    data.add_series("本文方法", (0.913, 0.887, 0.821, 0.868))
+    chart = slide.shapes.add_chart(
+        XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(1.0), Inches(1.7),
+        Inches(11.3), Inches(5.0), data).chart
+    chart.has_legend = True
+    chart.legend.position = XL_LEGEND_POSITION.BOTTOM
+    chart.legend.include_in_layout = False
+    chart.font.size = Pt(12)
+
+    # 6 大数字页 / 7 时间线页
+    _add_stat_page(prs, theme)
+    _add_timeline_page(prs, theme)
+
+    # 8 结尾
+    slide = prs.slides.add_slide(prs.slide_layouts[2])
+    for ph in slide.placeholders:
+        idx = ph.placeholder_format.idx
+        if idx == 0:
+            ph.text = "感谢各位专家指导"
+            for p in ph.text_frame.paragraphs:
+                p.alignment = PP_ALIGN.CENTER
+                for run in p.runs:
+                    _style_run(run, 36, colors["primary"], bold=True, font=title_font)
+        elif idx == 1:
+            ph.text = "2026 年 11 月"
+            for p in ph.text_frame.paragraphs:
+                p.alignment = PP_ALIGN.CENTER
+                for run in p.runs:
+                    _style_run(run, 15, colors["muted"], font=body_font)
+    slide.notes_slide.notes_text_frame.text = "结尾：致谢；可加联系方式或团队信息。"
+
+    # 导航条：第 3/4 页属第 1 段，第 5 页属第 3 段
+    labels = ["01 红色传承", "02 政策与需求", "03 功能与价值",
+              "04 技术与实现", "05 创新与应用"]
+    for page_no, active in {3: 0, 4: 0, 5: 2}.items():
+        _add_nav_bar(prs.slides[page_no - 1], labels, active, theme)
+
+
+def _add_demo(prs: Presentation, theme: dict) -> None:
+    style = theme.get("demo_style", "standard")
+    if style == "hbut":
+        _add_demo_hbut(prs, theme)
+    elif style == "competition":
+        _add_demo_competition(prs, theme)
+    else:
+        _add_demo_standard(prs, theme)
+
 
 def _build(theme: dict, with_demo: bool) -> Presentation:
     prs = Presentation()

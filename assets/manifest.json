@@ -86,6 +86,34 @@
       "fonts": {"title": "华文中宋", "body": "仿宋"},
       "use_for": ["政策解读", "宣讲培训", "落实部署", "新规培训"],
       "notes": "红色全屏封面/章节页，白色标题；适合政策解读与新旧对比。"
+    },
+    {
+      "slug": "hbut-defense",
+      "name": "湖工大学术答辩",
+      "scene": "学术科研",
+      "demo": "templates/ppt/hbut-defense.pptx",
+      "layout_template": "templates/ppt/hbut-defense.potx",
+      "slide_size": "13.333x7.5",
+      "slide_count": 8,
+      "page_plan": ["封面（校徽位+信息栏）", "两列目录", "章节页", "内容页", "图表页", "表格页", "两栏页", "结尾"],
+      "colors": {"primary": "06498D", "secondary": "0861BB", "accent": "C9A063", "light": "EEF3FA"},
+      "fonts": {"title": "微软雅黑", "body": "微软雅黑"},
+      "use_for": ["学位论文答辩", "开题报告", "课题结题", "湖工大学术汇报"],
+      "notes": "湖北工业大学模板包蒸馏：深蓝校色 #06498D、左侧竖条、金色强调线；校徽/校园图/页脚校名为占位框，学校素材需自行放入。"
+    },
+    {
+      "slug": "competition-defense",
+      "name": "竞赛答辩",
+      "scene": "学术科研",
+      "demo": "templates/ppt/competition-defense.pptx",
+      "layout_template": "templates/ppt/competition-defense.potx",
+      "slide_size": "13.333x7.5",
+      "slide_count": 8,
+      "page_plan": ["红色封面", "汇报路径", "章节页（含金句）", "内容页（顶部导航）", "图表页", "三指标大数字页", "四阶段时间线", "结尾"],
+      "colors": {"primary": "A61B29", "secondary": "1F6B5E", "accent": "C9A063", "light": "F7F3EA"},
+      "fonts": {"title": "华文中宋", "body": "微软雅黑"},
+      "use_for": ["挑战杯", "互联网+", "竞赛答辩", "项目路演"],
+      "notes": "挑战杯样稿蒸馏：顶部五段导航条、大数字页、四阶段时间线、右下金句；赛事标识/校徽为占位框。"
     }
   ],
   "word_templates": [

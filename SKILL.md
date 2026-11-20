@@ -136,9 +136,9 @@ python -X utf8 scripts/<脚本名>.py --help
 
 `SectionItem.type` 另支持 `hyperlink`（`HyperlinkDef`）与 `field`（`FieldDef`：PAGE/NUMPAGES/SECTIONPAGES/DATE/TIME/FILENAME/AUTHOR/TITLE/CUSTOM）。`SheetDef` 另支持 `charts`/`conditional_formats`/`data_validations`/`tables`/`defined_names`/`hyperlinks`/`comments`/`images`/`page_setup`/`row_heights`/`sheet_state`；`SlideTableDef`/`ChartDef` 支持 x/y/width/height，`SlideImageDef` 支持四边裁剪与超链接。参数细节与 JSON 模型见 `references/cli_args.md`，全部字段（含默认值/类型/说明）见 `references/models_word.md`、`models_excel.md`、`models_ppt.md`、`models_pdf_common.md`；模型定义源在 `scripts/office_engine/models.py`。转换/渲染/重算的后端顺序用 `OFFICE_CONVERT_BACKEND=auto|dsoffice|com|none` 控制：默认 auto 依次尝试 dsoffice、Microsoft Office COM、WPS COM；dsoffice 安装与 COM 排错见 `references/conversion.md`。
 
-## PPT 模板库（6 套 16:9）
+## PPT 模板库（8 套 16:9）
 
-`templates/ppt/` 提供 6 套成品模板，每套两种形态：`.pptx` 是 8 页示例 deck（直接改文字交付），`.potx` 是 0 页版式模板（供 `--template` 生成新 deck，不会带出示例页）。
+`templates/ppt/` 提供 8 套成品模板，每套两种形态：`.pptx` 是 8 页示例 deck（直接改文字交付），`.potx` 是 0 页版式模板（供 `--template` 生成新 deck，不会带出示例页）。
 
 | slug | 场景 | 适用 |
 |:---|:---|:---|
@@ -148,6 +148,8 @@ python -X utf8 scripts/<脚本名>.py --help
 | `academic-seminar` | 学术科研 | 开题、组会、中期检查 |
 | `government-report` | 政务公文 | 工作汇报、年度总结、督察整改 |
 | `government-briefing` | 政务公文 | 政策解读、宣讲培训 |
+| `hbut-defense` | 学术科研 | 湖工大学术答辩、开题（校色 #06498D） |
+| `competition-defense` | 竞赛路演 | 挑战杯、互联网+、项目答辩 |
 
 ```bash
 # 套版式生成新 deck；.potx 无示例页，画幅随模板（16:9）
@@ -283,7 +285,7 @@ stdout 默认只输出一个 JSON 对象，不提供 `--json` 开关；诊断写
 
 ## 验证状态
 
-- **2026-11-20 PPT 模板库实测**：`templates/ppt/` 6 套 16:9 模板（每套 `.pptx` 8 页示例 + `.potx` 0 页版式）；用 `academic-defense.potx` 经 `create_powerpoint --template` 生成 2 页，画幅 13.33×7.5、`Title Slide`/`Title and Content` 索引正确，标题 30pt 主题色左对齐、正文 18pt 由版式 `lstStyle` 继承；6 套封面/内容/图表/表格/两栏页经 PDF→PNG 渲染核对。
+- **2026-11-20 PPT 模板库实测**：`templates/ppt/` 8 套 16:9 模板（每套 `.pptx` 8 页示例 + `.potx` 0 页版式；含湖工大答辩与竞赛答辩两套蒸馏模板）；用 `academic-defense.potx` 经 `create_powerpoint --template` 生成 2 页，画幅 13.33×7.5、`Title Slide`/`Title and Content` 索引正确，标题 30pt 主题色左对齐、正文 18pt 由版式 `lstStyle` 继承；8 套封面/内容/图表/表格/两栏/大数字/时间线页经 PDF→PNG 渲染核对。
 - **自动化**：2026-11-20 引擎切换后全量 **64 项通过、0 跳过、0 失败**；复跑 `python -X utf8 -m unittest discover -s tests -v`。覆盖 45 个入口 `--help`、固定输出全量比对、退出码 1/2/3、创建→读取→校验往返、结构/触发基线、字体回退、渲染计数修正、批量备份、PPT 越界/重叠审计与 `--reflow`、dsoffice 与真实 Office/WPS COM、COM 缺失回退、17 项 validate fixture、扫描件 OCR，以及覆盖闸门（拒绝非空、空白放行、确认覆盖生成备份、编辑生成备份）。
 - **2026-11-20 `ppt_manage_shapes` 实测**：活动文档 add 返回 `mode=open_document`（文件开着时直接加到当前窗口并保存，无需关闭）；文件级 add 返回 `mode=file` 并生成 `.bak-*`；list 两条路径的索引/名称/位置/文本一致（`type` 在文件级为 XML 元素名、在活动文档为 Mso 类型码；`preset` 仅文件级输出）；越界 slide 返回退出码 2；渲染 PNG 核对形状位置与文字正确。
 - **2026-11-20 引擎策略调整实测**：默认改为 Python 优先，`ppt_manage_shapes` 同时具备 Python（活动文档 COM + python-pptx 文件级）与 C# 实现；三路径（默认 Python 文件级、显式 C#、活动文档 COM）add/list 与越界/非法颜色/非法尺寸退出码均通过；全量 64 项通过、0 跳过；7 个 C# 专属入口仍自动走 C#。
